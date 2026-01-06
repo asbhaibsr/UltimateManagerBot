@@ -1,0 +1,26 @@
+name: movie-bot-pro
+region: fra
+env:
+  - name: BOT_TOKEN
+    value: "YOUR_BOT_TOKEN_HERE"
+  - name: API_ID
+    value: "YOUR_API_ID_HERE"
+  - name: API_HASH
+    value: "YOUR_API_HASH_HERE"
+  - name: MONGO_DB_URL
+    value: "YOUR_MONGODB_URL_HERE"
+  - name: OWNER_ID
+    value: "YOUR_TELEGRAM_ID"
+  - name: BOT_USERNAME
+    value: "MovieMasterProBot"
+  - name: MAIN_CHANNEL
+    value: "@asbhai_bsr"
+  - name: PORT
+    value: "8080"
+  
+build:
+  command: "pip install -r requirements.txt"
+  
+routes:
+  - path: /
+    port: 8080
