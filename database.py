@@ -1,5 +1,3 @@
-# database.py
-
 from motor.motor_asyncio import AsyncIOMotorClient
 from config import Config
 from datetime import datetime, timedelta
@@ -32,7 +30,7 @@ class Database:
                 "premium_expiry": expiry_date,
                 "premium_start": datetime.now(),
                 "premium_months": months,
-                "ads_enabled": False  # No ads for premium
+                "ads_enabled": False
             }},
             upsert=True
         )
@@ -57,23 +55,75 @@ class Database:
             return False
         return True
     
-    async def get_premium_stats(self):
-        """Get premium statistics"""
-        total_premium = await self.db.groups.count_documents({"is_premium": True})
-        active_premium = await self.db.groups.count_documents({
-            "is_premium": True,
-            "premium_expiry": {"$gt": datetime.now()}
-        })
-        expired_premium = await self.db.groups.count_documents({
-            "is_premium": True,
-            "premium_expiry": {"$lt": datetime.now()}
-        })
-        
-        return {
-            "total_premium": total_premium,
-            "active_premium": active_premium,
-            "expired_premium": expired_premium
-        }
+    # ========== FSUB SYSTEM ==========
+    async def set_fsub_channel(self, chat_id: int, channel_username: str, channel_id: int):
+        """Set force subscribe channel for group"""
+        await self.db.groups.update_one(
+            {"chat_id": chat_id},
+            {"$set": {
+                "fsub_enabled": True,
+                "fsub_channel": channel_username,
+                "fsub_channel_id": channel_id
+            }},
+            upsert=True
+        )
+    
+    async def disable_fsub(self, chat_id: int):
+        """Disable force subscribe"""
+        await self.db.groups.update_one(
+            {"chat_id": chat_id},
+            {"$set": {"fsub_enabled": False}}
+        )
+    
+    async def get_fsub_channel(self, chat_id: int):
+        """Get FSUB channel info"""
+        group = await self.db.groups.find_one({"chat_id": chat_id})
+        if group and group.get("fsub_enabled"):
+            return {
+                "channel": group.get("fsub_channel"),
+                "channel_id": group.get("fsub_channel_id")
+            }
+        return None
+    
+    # ========== FORCE JOIN SYSTEM ==========
+    async def set_force_join(self, chat_id: int, count: int):
+        """Set force join requirements"""
+        await self.db.groups.update_one(
+            {"chat_id": chat_id},
+            {"$set": {
+                "force_join_enabled": count > 0,
+                "force_join_count": count,
+                "force_join_members": []
+            }},
+            upsert=True
+        )
+    
+    async def disable_force_join(self, chat_id: int):
+        """Disable force join"""
+        await self.db.groups.update_one(
+            {"chat_id": chat_id},
+            {"$set": {
+                "force_join_enabled": False,
+                "force_join_count": 0
+            }}
+        )
+    
+    async def add_invited_member(self, chat_id: int, inviter_id: int, invited_id: int):
+        """Add invited member for force join tracking"""
+        await self.db.force_join.update_one(
+            {"chat_id": chat_id, "inviter_id": inviter_id},
+            {"$addToSet": {"invited_members": invited_id}},
+            upsert=True
+        )
+    
+    async def get_invited_count(self, chat_id: int, user_id: int):
+        """Get how many members user has invited"""
+        record = await self.db.force_join.find_one(
+            {"chat_id": chat_id, "inviter_id": user_id}
+        )
+        if record and record.get("invited_members"):
+            return len(record["invited_members"])
+        return 0
     
     # ========== USER MANAGEMENT ==========
     async def add_user(self, user_id: int, username: str = ""):
@@ -82,15 +132,12 @@ class Database:
             {"$set": {
                 "user_id": user_id,
                 "username": username,
-                "first_name": "",
                 "joined": datetime.now(),
                 "last_active": datetime.now(),
                 "blocked": False,
                 "is_owner": user_id == Config.OWNER_ID,
                 "requests_today": 0,
-                "last_request": None,
-                "is_premium_user": False,
-                "premium_expiry": None
+                "last_request": None
             }},
             upsert=True
         )
@@ -116,21 +163,25 @@ class Database:
                 "premium_expiry": None,
                 "premium_start": None,
                 "premium_months": 0,
-                "ads_enabled": True,  # Show ads by default
+                "ads_enabled": True,
                 "features": Config.FEATURE_DEFAULTS.copy(),
                 "auto_delete_time": Config.DEFAULT_AUTO_DELETE_TIME,
-                "file_clean_time": 300,  # 5 minutes for files
-                "fsub_channels": [],
+                "file_clean_time": 300,
                 "fsub_enabled": False,
-                "force_join_count": 0,
+                "fsub_channel": None,
+                "fsub_channel_id": None,
                 "force_join_enabled": False,
-                "request_channel": None,
+                "force_join_count": 0,
                 "cooldown_time": Config.REQUEST_COOLDOWN,
-                "welcome_message": "Welcome! Request movies with /request",
                 "created": datetime.now()
             }
             await self.db.groups.insert_one(default_settings)
             return default_settings
+        
+        # Ensure features exist
+        if "features" not in settings:
+            settings["features"] = Config.FEATURE_DEFAULTS.copy()
+        
         return settings
     
     async def update_group_settings(self, chat_id: int, updates: dict):
@@ -151,16 +202,9 @@ class Database:
         settings = await self.get_group_settings(chat_id)
         return settings["features"].get(feature, True)
     
-    # ========== TIME SETTINGS ==========
-    async def set_auto_delete_time(self, chat_id: int, seconds: int):
-        await self.update_group_settings(chat_id, {"auto_delete_time": seconds})
-    
-    async def set_file_clean_time(self, chat_id: int, seconds: int):
-        await self.update_group_settings(chat_id, {"file_clean_time": seconds})
-    
     # ========== REQUEST SYSTEM ==========
     async def add_request(self, chat_id: int, user_id: int, movie_name: str):
-        request_id = f"{chat_id}_{user_id}_{datetime.now().timestamp()}"
+        request_id = f"{chat_id}_{user_id}_{int(datetime.now().timestamp())}"
         
         await self.db.requests.insert_one({
             "request_id": request_id,
@@ -182,69 +226,12 @@ class Database:
         
         return request_id
     
-    async def get_pending_requests(self, chat_id: int, limit: int = 10):
-        return await self.db.requests.find({
-            "chat_id": chat_id,
-            "status": "pending"
-        }).sort("requested_at", 1).limit(limit).to_list(length=None)
-    
-    async def complete_request(self, request_id: str, admin_id: int):
-        await self.db.requests.update_one(
-            {"request_id": request_id},
-            {"$set": {
-                "status": "completed",
-                "completed_at": datetime.now(),
-                "completed_by": admin_id
-            }}
-        )
-    
-    # ========== FILE CLEANER ==========
-    async def add_file_to_cleaner(self, chat_id: int, message_id: int, delete_after: int):
-        await self.db.file_cleaner.insert_one({
-            "chat_id": chat_id,
-            "message_id": message_id,
-            "delete_at": datetime.now() + timedelta(seconds=delete_after),
-            "added_at": datetime.now(),
-            "deleted": False
-        })
-    
-    async def get_files_to_clean(self):
-        return await self.db.file_cleaner.find({
-            "delete_at": {"$lt": datetime.now()},
-            "deleted": False
-        }).to_list(length=None)
-    
-    async def mark_file_cleaned(self, message_id: int):
-        await self.db.file_cleaner.update_one(
-            {"message_id": message_id},
-            {"$set": {"deleted": True}}
-        )
-    
-    # ========== VERIFICATION SYSTEM ==========
-    async def set_verified_user(self, chat_id: int, user_id: int):
-        await self.db.verified_users.update_one(
-            {"chat_id": chat_id, "user_id": user_id},
-            {"$set": {"verified_at": datetime.now()}},
-            upsert=True
-        )
-    
-    async def is_verified(self, chat_id: int, user_id: int):
-        doc = await self.db.verified_users.find_one({
-            "chat_id": chat_id,
-            "user_id": user_id
-        })
-        return doc is not None
-    
     # ========== STATISTICS ==========
     async def get_bot_stats(self):
-        total_users = await self.db.users.count_documents({"blocked": False})
+        total_users = await self.db.users.count_documents({})
         total_groups = await self.db.groups.count_documents({})
-        blocked_users = await self.db.users.count_documents({"blocked": True})
         total_requests = await self.db.requests.count_documents({})
         pending_requests = await self.db.requests.count_documents({"status": "pending"})
-        
-        # Premium stats
-        premium_stats = await self.get_premium_stats()
         
         # Today's requests
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -255,31 +242,9 @@ class Database:
         return {
             "total_users": total_users,
             "total_groups": total_groups,
-            "blocked_users": blocked_users,
             "total_requests": total_requests,
             "pending_requests": pending_requests,
-            "today_requests": today_requests,
-            "premium_stats": premium_stats
-        }
-    
-    # ========== CLEANUP ==========
-    async def cleanup_old_data(self):
-        """Clean old data to save space"""
-        # Delete requests older than 30 days
-        month_ago = datetime.now() - timedelta(days=30)
-        result1 = await self.db.requests.delete_many({
-            "requested_at": {"$lt": month_ago}
-        })
-        
-        # Delete cleaned files older than 7 days
-        week_ago = datetime.now() - timedelta(days=7)
-        result2 = await self.db.file_cleaner.delete_many({
-            "added_at": {"$lt": week_ago}
-        })
-        
-        return {
-            "old_requests": result1.deleted_count,
-            "old_files": result2.deleted_count
+            "today_requests": today_requests
         }
 
 # Global instance
