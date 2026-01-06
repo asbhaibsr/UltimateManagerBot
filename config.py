@@ -6,37 +6,56 @@ load_dotenv()
 class Config:
     # Telegram Credentials
     BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-    API_ID = int(os.getenv("API_ID", 29970536))
-    API_HASH = os.getenv("API_HASH", "f4bfdcdd4a5c1b7328a7e4f25f024a09")
+    API_ID = int(os.getenv("API_ID", 0))
+    API_HASH = os.getenv("API_HASH", "")
     
-    # Database
+    # Database (MongoDB Free Cluster)
     MONGO_DB_URL = os.getenv("MONGO_DB_URL", "")
     
     # Bot Settings
-    OWNER_ID = int(os.getenv("OWNER_ID", 7315805581))
-    BOT_USERNAME = os.getenv("BOT_USERNAME", "MovieHelper_asBot")
+    OWNER_ID = int(os.getenv("OWNER_ID", 0))
+    BOT_USERNAME = os.getenv("BOT_USERNAME", "MovieMasterProBot")
     
-    # Your Channels
-    CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "asbhai_bsr")
-    MOVIE_CHANNEL = os.getenv("MOVIE_CHANNEL", "@asfilter_bot")
+    # Channels
+    MAIN_CHANNEL = os.getenv("MAIN_CHANNEL", "@asbhai_bsr")
+    LOG_CHANNEL = int(os.getenv("LOG_CHANNEL", 0))
     
-    # URLs
-    START_IMAGE = os.getenv("START_IMAGE", "https://images.unsplash.com/photo-1635805737707-575885ab0820?w=800")
+    # Default Settings
+    DEFAULT_AUTO_DELETE_TIME = 300  # 5 minutes
+    DEFAULT_FSUB_CHANNELS = []
+    DEFAULT_FORCE_JOIN = 0
+    
+    # Time Options (Seconds)
+    TIME_OPTIONS = {
+        "2 minute": 120,
+        "5 minute": 300,
+        "10 minute": 600,
+        "30 minute": 1800,
+        "1 hour": 3600,
+        "Permanent": 0
+    }
+    
+    # Feature Defaults
+    FEATURE_DEFAULTS = {
+        "spell_check": True,
+        "season_check": True,
+        "auto_delete": True,
+        "request_system": True,
+        "file_cleaner": True
+    }
+    
+    # Premium Settings
+    PREMIUM_PRICES = {
+        "5": 300,      # 5 months for ₹300
+        "12": 500,     # 1 year for ₹500
+        "24": 1000     # 2 years for ₹1000
+    }
+    
+    # Server Settings
     PORT = int(os.getenv("PORT", 8080))
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
     
-    # Time Settings (Seconds)
-    AUTO_DELETE_TIME = 300  # 5 minutes
-    FSUB_CHECK_TIME = 60    # 1 minute
-    
-    # Limits
-    MAX_FSUB_CHANNELS = 3
-    FORCE_JOIN_OPTIONS = [1, 2, 3, 5, 10]
-    
-    # APIs
-    SPELLCHECK_API = "https://api.dictionaryapi.dev/api/v2/entries/en/"
-    TMDB_API_KEY = os.getenv("TMDB_API_KEY", "")
-    
-    # Logging
-    LOG_CHANNEL = int(os.getenv("LOG_CHANNEL", -1002352329534))
+    # Request Cooldown (Seconds)
+    REQUEST_COOLDOWN = 300  # 5 minutes
 
 config = Config()
