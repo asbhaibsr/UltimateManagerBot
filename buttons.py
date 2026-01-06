@@ -1,5 +1,3 @@
-# buttons.py
-
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import Config
 from premium_menu import premium_ui
@@ -30,8 +28,22 @@ class ButtonManager:
         return InlineKeyboardMarkup(buttons)
     
     @staticmethod
-    def features_menu(chat_id: int = None) -> InlineKeyboardMarkup:
-        buttons = [
+    def features_menu(chat_id: int = None, is_admin: bool = False) -> InlineKeyboardMarkup:
+        buttons = []
+        
+        if chat_id and is_admin:
+            buttons.extend([
+                [
+                    InlineKeyboardButton("👥 Force Subscribe", callback_data="feature_fsub"),
+                    InlineKeyboardButton("✅ ON/OFF", callback_data="toggle_fsub")
+                ],
+                [
+                    InlineKeyboardButton("👥 Force Join", callback_data="feature_force_join"),
+                    InlineKeyboardButton("✅ ON/OFF", callback_data="toggle_force_join")
+                ]
+            ])
+        
+        buttons.extend([
             [
                 InlineKeyboardButton("🔤 Spelling Check", callback_data="feature_spell_check"),
                 InlineKeyboardButton("✅ ON/OFF", callback_data="toggle_spell_check")
@@ -59,17 +71,7 @@ class ButtonManager:
             [
                 InlineKeyboardButton("🔙 Back", callback_data="back_to_start")
             ]
-        ]
-        
-        if chat_id:
-            buttons.insert(0, [
-                InlineKeyboardButton("👥 Force Subscribe", callback_data="feature_fsub"),
-                InlineKeyboardButton("✅ ON/OFF", callback_data="toggle_fsub")
-            ])
-            buttons.insert(1, [
-                InlineKeyboardButton("👥 Force Join", callback_data="feature_force_join"),
-                InlineKeyboardButton("✅ ON/OFF", callback_data="toggle_force_join")
-            ])
+        ])
         
         return InlineKeyboardMarkup(buttons)
     
@@ -134,5 +136,95 @@ class ButtonManager:
                 InlineKeyboardButton("🔙 Back", callback_data="back_to_start")
             ]
         ])
+    
+    @staticmethod
+    def fsub_setup_buttons():
+        return InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📢 Add to Channel", 
+                 url=f"https://t.me/{Config.BOT_USERNAME}?startchannel=true&admin=post_messages+edit_messages"),
+                InlineKeyboardButton("✅ Done", callback_data="fsub_done")
+            ],
+            [
+                InlineKeyboardButton("❌ Cancel", callback_data="cancel_fsub")
+            ]
+        ])
+    
+    @staticmethod
+    def fsub_channel_button(channel_username: str):
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{channel_username}")],
+            [InlineKeyboardButton("✅ I Have Joined", callback_data="check_fsub")]
+        ])
+    
+    @staticmethod
+    def force_join_buttons(chat_id: int, required_count: int, current_count: int):
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("👥 Invite Members", 
+             url=f"https://t.me/share/url?url=join%20{chat_id}")],
+            [InlineKeyboardButton(f"✅ Check Invites ({current_count}/{required_count})", 
+             callback_data="check_invites")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="cancel_force_join")]
+        ])
+    
+    @staticmethod
+    def movie_search_buttons(search_id: str, results: list, current_page: int = 0):
+        """Create buttons for movie search results"""
+        buttons = []
+        results_per_page = 5
+        start_idx = current_page * results_per_page
+        end_idx = start_idx + results_per_page
+        
+        for i in range(start_idx, min(end_idx, len(results))):
+            movie = results[i]
+            title = movie.get('title', f"Movie {i+1}")
+            movie_id = movie.get('imdb_id', '')
+            
+            # Truncate long titles
+            if len(title) > 30:
+                title = title[:27] + "..."
+            
+            buttons.append([
+                InlineKeyboardButton(f"🎬 {title} ({movie.get('year', 'N/A')})",
+                 callback_data=f"select_movie_{search_id}_{i}")
+            ])
+        
+        # Navigation buttons
+        nav_buttons = []
+        if current_page > 0:
+            nav_buttons.append(InlineKeyboardButton("⬅️ Previous", 
+                         callback_data=f"movie_page_{search_id}_{current_page-1}"))
+        
+        if end_idx < len(results):
+            nav_buttons.append(InlineKeyboardButton("Next ➡️", 
+                         callback_data=f"movie_page_{search_id}_{current_page+1}"))
+        
+        if nav_buttons:
+            buttons.append(nav_buttons)
+        
+        # Add close button
+        buttons.append([InlineKeyboardButton("❌ Close", callback_data="close_search")])
+        
+        return InlineKeyboardMarkup(buttons)
+    
+    @staticmethod
+    def movie_details_buttons(movie_id: str, title: str):
+        """Create buttons for movie details"""
+        buttons = [
+            [
+                InlineKeyboardButton("🎬 Get Movie", url=f"https://t.me/asfilter_bot?start=movie_{movie_id}"),
+                InlineKeyboardButton("📢 Share", switch_inline_query=f"{title}")
+            ],
+            [
+                InlineKeyboardButton("⭐ Rate on IMDb", url=f"https://www.imdb.com/title/tt{movie_id}/"),
+                InlineKeyboardButton("🔍 Search Again", callback_data="search_again")
+            ],
+            [InlineKeyboardButton("❌ Close", callback_data="close_details")]
+        ]
+        return InlineKeyboardMarkup(buttons)
+    
+    @staticmethod
+    def close_button():
+        return InlineKeyboardMarkup([[InlineKeyboardButton("❌ Close", callback_data="close")]])
 
 buttons = ButtonManager()
