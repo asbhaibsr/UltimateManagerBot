@@ -91,6 +91,7 @@ def health():
     return {"status": "healthy", "timestamp": time.time()}, 200
 
 def run_flask():
+    """Run Flask server for Koyeb health checks"""
     app.run(host='0.0.0.0', port=Config.PORT, debug=False, use_reloader=False)
 
 # Initialize Bot
@@ -686,71 +687,42 @@ async def file_cleaner_task():
         # Check every 30 seconds
         await asyncio.sleep(30)
 
-# ========== KEEP-ALIVE PING TASK ==========
-async def keep_alive_task():
-    """Send periodic pings to keep Koyeb alive"""
-    while True:
-        try:
-            # Access Flask endpoint to keep it alive
-            import urllib.request
-            urllib.request.urlopen(f"http://0.0.0.0:{Config.PORT}/ping").read()
-        except:
-            pass
-        
-        # Ping every 30 seconds
-        await asyncio.sleep(30)
-
-# ========== BOT STARTUP ==========
 async def main():
     """Start the bot"""
-    # Start Flask server in background
-    flask_thread = Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    print(f"🌐 Flask running on port {Config.PORT}")
+    print("🚀 Bot starting...")
     
-    # Initialize database
+    # 1. Database Initialize karein
     if not await db.init_db():
         print("❌ Failed to connect to database!")
         return
     
-    # Start bot
+    # 2. Bot Start karein
     await bot.start()
-    print("🤖 Bot started successfully!")
-    
-    # Start background tasks
+    print("🤖 Bot is Online!")
+
+    # 3. Background tasks start karein
     asyncio.create_task(file_cleaner_task())
-    asyncio.create_task(keep_alive_task())
     
-    # Send startup message to owner
+    # Startup message
     try:
-        stats = await db.get_bot_stats()
-        await bot.send_message(
-            Config.OWNER_ID,
-            f"🎬 **Movie Bot Pro Started!**\n\n"
-            f"✅ Database: Connected\n"
-            f"✅ Flask: Port {Config.PORT}\n"
-            f"✅ Users: {stats['total_users']}\n"
-            f"✅ Groups: {stats['total_groups']}\n"
-            f"✅ Premium Groups: {stats['premium_stats']['active_premium']}\n\n"
-            f"Made with ❤️ by @asbhai_bsr\n"
-            f"Bot: @{Config.BOT_USERNAME}"
-        )
-    except Exception as e:
-        print(f"Failed to send startup message: {e}")
+        await bot.send_message(Config.OWNER_ID, "✅ Bot has been deployed and is now Online!")
+    except:
+        pass
     
-    print("✅ Bot is running! Press Ctrl+C to stop.")
-    
-    # Keep running
+    # 4. Bot ko chalta rehne dein
     await idle()
     
-    # Stop bot
+    # 5. Stop bot gracefully
     await bot.stop()
 
-# ========== RUN BOT ==========
 if __name__ == "__main__":
+    # Flask ko thread mein chalayein taki Koyeb health check pass ho jaye
+    t = Thread(target=run_flask)
+    t.daemon = True
+    t.start()
+    
+    # Bot ko main loop mein chalayein
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n❌ Bot stopped by user")
-    except Exception as e:
-        print(f"❌ Error: {e}")
+        print("Bot Stopped!")
