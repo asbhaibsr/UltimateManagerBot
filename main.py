@@ -6,16 +6,17 @@ from pyrogram.types import (
     InlineKeyboardButton, CallbackQuery,
     ChatPermissions
 )
-from flask import Flask, request
+from pyrogram.enums import ChatMemberStatus
+from flask import Flask
 from threading import Thread
 import time
+import re
 
 from config import Config
 from database import db
-from handlers import (
-    movie_checker, fsub_handler, 
-    fjoin_handler, broadcast_handler
-)
+from features import feature_manager
+from buttons import buttons
+from premium_menu import premium_ui
 
 # Setup logging
 logging.basicConfig(
@@ -24,29 +25,70 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Flask app for Render 24/7
+# Flask app for Koyeb
 app = Flask(__name__)
 
 @app.route('/')
 def home():
     return """
     <html>
-        <head><title>🤖 Movie Bot - Running 24/7</title></head>
-        <body style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-align: center; padding: 50px;">
-            <h1>🎬 Movie Bot is Running!</h1>
-            <p>Bot Status: <span style="color: #4CAF50; font-weight: bold;">ONLINE ✅</span></p>
-            <p>Made with ❤️ by @asbhai_bsr</p>
-            <p>Users: Loading...</p>
+        <head>
+            <title>🎬 Movie Bot Pro - Running 24/7</title>
+            <meta http-equiv="refresh" content="30">
+            <style>
+                body {
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    font-family: Arial, sans-serif;
+                    text-align: center;
+                    padding: 50px;
+                }
+                .container {
+                    background: rgba(255, 255, 255, 0.1);
+                    backdrop-filter: blur(10px);
+                    border-radius: 20px;
+                    padding: 30px;
+                    max-width: 600px;
+                    margin: 0 auto;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                }
+                .status {
+                    display: inline-block;
+                    padding: 5px 15px;
+                    background: #4CAF50;
+                    border-radius: 20px;
+                    font-weight: bold;
+                    animation: pulse 2s infinite;
+                }
+                @keyframes pulse {
+                    0% { opacity: 1; }
+                    50% { opacity: 0.7; }
+                    100% { opacity: 1; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>🎬 Movie Bot Pro</h1>
+                <p>Status: <span class="status">ONLINE ✅</span></p>
+                <p>24/7 Running on Koyeb</p>
+                <p>Made with ❤️ by @asbhai_bsr</p>
+                <p>Bot: @{}</p>
+                <p>🆔 Version: 2.0 with Premium System</p>
+            </div>
         </body>
     </html>
-    """
+    """.format(Config.BOT_USERNAME)
 
 @app.route('/ping')
 def ping():
     return "pong", 200
 
+@app.route('/health')
+def health():
+    return {"status": "healthy", "timestamp": time.time()}, 200
+
 def run_flask():
-    """Run Flask server in separate thread"""
     app.run(host='0.0.0.0', port=Config.PORT, debug=False, use_reloader=False)
 
 # Initialize Bot
@@ -55,439 +97,646 @@ bot = Client(
     api_id=Config.API_ID,
     api_hash=Config.API_HASH,
     bot_token=Config.BOT_TOKEN,
-    plugins=dict(root="plugins")
+    workers=100,
+    sleep_threshold=60
 )
 
 # ========== START COMMAND ==========
 @bot.on_message(filters.command("start") & filters.private)
 async def start_command(client: Client, message: Message):
-    """Start command with beautiful menu"""
     user_id = message.from_user.id
     username = message.from_user.username or ""
     
-    # Add user to database
     await db.add_user(user_id, username)
     
-    # Create buttons
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ Add to Group", 
-          url=f"https://t.me/{Config.BOT_USERNAME}?startgroup=true")],
-        [InlineKeyboardButton("📢 Official Channel", 
-          url=f"https://t.me/{Config.CHANNEL_USERNAME}")],
-        [InlineKeyboardButton("🎬 Movie Channel", 
-          url=Config.MOVIE_CHANNEL)],
-        [InlineKeyboardButton("🆘 Help", callback_data="help"),
-         InlineKeyboardButton("📊 Stats", callback_data="stats")],
-        [InlineKeyboardButton("👨‍💻 Owner", url="https://t.me/asbhai_bsr")]
-    ])
+    welcome_text = f"""
+    🎬 **Welcome {message.from_user.first_name}!** 🤖
+
+    I'm **Movie Bot Pro** - Your Smart Movie Assistant!
+
+    ✅ **Features:**
+    • 🔤 Smart Spelling Correction
+    • 📺 Season Number Detection  
+    • 🎬 Movie Request System
+    • 🗑️ Auto File Cleaner
+    • 💎 Premium System (Ad-free)
+    • ⚙️ Fully Customizable
+    • 👥 Force Subscribe/Join
+
+    **📌 How to use in Groups:**
+    1. Add me to your group
+    2. Make me **Admin**
+    3. Use `/settings` to configure
+    4. Members can request movies!
+
+    **👨‍💻 Owner:** @asbhai_bsr
+    **📢 Channel:** @{Config.MAIN_CHANNEL}
+    """
     
-    # Send welcome message
-    await message.reply_photo(
-        photo=Config.START_IMAGE,
-        caption=f"""
-        🎬 **Welcome to Movie Bot Pro!** 🚀
-
-        **Hi {message.from_user.first_name}!** 👋
-
-        I'm your AI-powered movie assistant with amazing features:
-
-        ✅ **Smart Name Checker** - Automatically corrects movie names
-        ✅ **Season Detection** - Reminds you to add S01, S02
-        ✅ **Force Subscribe** - Channel join required
-        ✅ **Force Group Join** - Add members before posting
-        ✅ **Auto Cleanup** - Keeps group clean
-        ✅ **Movie Details** - Get info with one click
-
-        **⚡ How to use:**
-        1. Add me to your group
-        2. Make me **Admin**
-        3. Start typing movie names!
-
-        **👨‍💻 Developer:** @asbhai_bsr
-        """,
-        reply_markup=keyboard
+    await message.reply_text(
+        text=welcome_text,
+        reply_markup=buttons.start_menu(user_id),
+        disable_web_page_preview=True
     )
 
-# ========== HELP COMMAND ==========
-@bot.on_message(filters.command("help") & filters.private)
-async def help_command(client: Client, message: Message):
-    """Help command"""
-    help_text = """
-    **🤖 MOVIE BOT HELP GUIDE** 📖
+# ========== PREMIUM COMMANDS ==========
+@bot.on_message(filters.command("premium") & filters.private)
+async def premium_command(client: Client, message: Message):
+    """Show premium information"""
+    await message.reply_text(
+        text=premium_ui.main_premium_text(),
+        reply_markup=premium_ui.premium_buttons(),
+        disable_web_page_preview=True
+    )
 
-    **📌 HOW TO USE IN GROUPS:**
-    1. Just type any movie/series name
-    2. I'll automatically check spelling
-    3. If wrong → I'll suggest correct name
-    4. If correct → I'll stay silent
+@bot.on_message(filters.command("addpremium") & filters.user(Config.OWNER_ID))
+async def add_premium_cmd(client, message: Message):
+    """Add premium to a group (Owner only)"""
+    if len(message.command) < 2:
+        return await message.reply("Usage: `/addpremium <group_id>`")
+    
+    group_id = int(message.command[1])
+    
+    await message.reply(
+        f"Select duration for Group `{group_id}`:",
+        reply_markup=premium_ui.admin_premium_select(group_id)
+    )
 
-    **🔧 ADMIN COMMANDS:**
-    • `/stats` - Bot statistics
-    • `/broadcast` - Send message to all users
-    • `/clearjunk` - Remove inactive users
-    • `/fsub @channel_id` - Setup force subscribe
-    • `/offfsub` - Disable force subscribe
-    • `/forcejoin 2` - Force join (2,3,5,10 members)
-    • `/offforcejoin` - Disable force join
+@bot.on_callback_query(filters.regex(r"addprem_"))
+async def process_premium(client, callback: CallbackQuery):
+    """Process premium activation"""
+    data = callback.data.split("_")
+    group_id = int(data[1])
+    months = int(data[2])
+    
+    expiry = await db.set_premium(group_id, months)
+    await callback.message.edit(
+        f"✅ Premium Activated for `{group_id}`!\n"
+        f"Duration: {months} months\n"
+        f"Expiry: {expiry.strftime('%Y-%m-%d')}\n"
+        f"Price: ₹{Config.PREMIUM_PRICES.get(str(months), 'N/A')}"
+    )
+    
+    # Notify Group
+    try:
+        await client.send_message(
+            group_id,
+            f"🎊 **CONGRATULATIONS!**\n"
+            f"This group is now **PREMIUM** for {months} months!\n"
+            f"✅ Ads are disabled\n"
+            f"✅ All features unlocked\n"
+            f"✅ Priority support"
+        )
+    except:
+        pass
+    
+    await callback.answer("Premium activated!")
 
-    **🎯 FEATURES:**
-    • AI-powered name checking
-    • Season number verification
-    • Movie details with download link
-    • Multi-language support (Hindi/English)
-    • Force subscribe system
-    • Force group join system
-    • Auto-delete messages
+@bot.on_callback_query(filters.regex("show_premium"))
+async def show_premium_handler(client, callback: CallbackQuery):
+    """Show premium menu"""
+    await callback.message.edit(
+        text=premium_ui.main_premium_text(),
+        reply_markup=premium_ui.premium_buttons(),
+        disable_web_page_preview=True
+    )
 
-    **📞 SUPPORT:** @asbhai_bsr
+# ========== SETTINGS COMMAND ==========
+@bot.on_message(filters.command("settings") & filters.group)
+async def settings_command(client: Client, message: Message):
+    """Show settings menu to group admins"""
+    chat_id = message.chat.id
+    
+    # Check if user is admin
+    try:
+        user = await client.get_chat_member(chat_id, message.from_user.id)
+        if user.status not in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
+            await message.reply("❌ Only admins can use this command!")
+            return
+    except Exception as e:
+        await message.reply(f"❌ Error: {e}")
+        return
+    
+    settings = await db.get_group_settings(chat_id)
+    is_premium = await db.check_premium(chat_id)
+    
+    premium_status = "🟢 PREMIUM" if is_premium else "🔴 FREE"
+    
+    settings_text = f"""
+    ⚙️ **Group Settings for {message.chat.title}**
+    
+    **{premium_status} VERSION**
+    
+    **🔧 Features Status:**
+    • 🔤 Spelling Check: {'✅ ON' if settings['features']['spell_check'] else '❌ OFF'}
+    • 📺 Season Check: {'✅ ON' if settings['features']['season_check'] else '❌ OFF'}
+    • 🗑️ Auto Delete: {'✅ ON' if settings['features']['auto_delete'] else '❌ OFF'}
+    • 📁 File Cleaner: {'✅ ON' if settings['features']['file_cleaner'] else '❌ OFF'}
+    • 🎬 Request System: {'✅ ON' if settings['features']['request_system'] else '❌ OFF'}
+    
+    **⏰ Timing Settings:**
+    • Auto Delete: {settings['auto_delete_time']} seconds
+    • File Clean: {settings['file_clean_time']} seconds
+    
+    **👥 Verification:**
+    • Force Subscribe: {'✅ ON' if settings['fsub_enabled'] else '❌ OFF'}
+    • Force Join: {'✅ ON' if settings['force_join_enabled'] else '❌ OFF'}
+    
+    Click buttons below to change settings:
     """
-    await message.reply(help_text)
+    
+    await message.reply(
+        settings_text,
+        reply_markup=buttons.features_menu(chat_id)
+    )
+
+# ========== REQUEST COMMAND ==========
+@bot.on_message(filters.command("request") & filters.group)
+async def request_command(client: Client, message: Message):
+    """Handle movie requests"""
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    
+    # Check request system is enabled
+    if not await db.get_feature_status(chat_id, "request_system"):
+        await message.reply("❌ Request system is disabled in this group!")
+        return
+    
+    # Check cooldown
+    user_data = await db.get_user(user_id)
+    if user_data and user_data.get('last_request'):
+        last_request = user_data['last_request']
+        cooldown = (await db.get_group_settings(chat_id))['cooldown_time']
+        
+        time_diff = (message.date - last_request).seconds
+        if time_diff < cooldown:
+            remaining = cooldown - time_diff
+            await message.reply(f"⏳ Please wait {remaining} seconds before another request!")
+            return
+    
+    # Extract movie name
+    if len(message.command) < 2:
+        await message.reply("""
+        **Usage:** `/request Movie Name`
+        
+        **Examples:**
+        `/request Kalki 2898 AD`
+        `/request The Boys Season 4`
+        `/request Stree 2`
+        """)
+        return
+    
+    movie_name = ' '.join(message.command[1:])
+    cleaned_name = await feature_manager.clean_movie_request(movie_name)
+    
+    # Create request
+    request_id = await db.add_request(chat_id, user_id, cleaned_name)
+    
+    # Send confirmation
+    confirm_text = f"""
+    🎬 **Movie Request Created!**
+    
+    **Movie:** {cleaned_name}
+    **Requested by:** {message.from_user.mention}
+    **Request ID:** `{request_id}`
+    
+    ✅ Admins have been notified!
+    ⏳ You'll be updated when it's ready.
+    """
+    
+    await message.reply(confirm_text)
+    
+    # Notify admins (with premium check for ads)
+    is_premium = await db.check_premium(chat_id)
+    
+    admins_text = f"""
+    🔔 **New Movie Request!**
+    
+    **Group:** {message.chat.title}
+    **Movie:** {cleaned_name}
+    **User:** {message.from_user.mention} (@{message.from_user.username or 'N/A'})
+    **Request ID:** `{request_id}`
+    **Premium:** {'✅ Yes' if is_premium else '❌ No'}
+    """
+    
+    # Send to owner
+    try:
+        await client.send_message(
+            chat_id=Config.OWNER_ID,
+            text=admins_text
+        )
+    except:
+        pass
+
+# ========== FUNCTION COMMAND ==========
+@bot.on_message(filters.command("function") & filters.group)
+async def function_command(client: Client, message: Message):
+    """Show all functions with buttons"""
+    functions_text = """
+    ⚙️ **ALL BOT FUNCTIONS** 🎯
+
+    **🔧 FEATURE TOGGLES:**
+    • 🔤 Spelling Checker - Auto-correct movie names
+    • 📺 Season Checker - Detect missing season numbers  
+    • 🗑️ Auto Delete - Delete messages after time
+    • 📁 File Cleaner - Auto delete files/videos/photos
+    • 🎬 Request System - Movie request management
+    • 👥 Force Subscribe - Channel join required
+    • 👥 Force Join - Add members before posting
+    
+    **💎 PREMIUM FEATURES:**
+    • Ad-free experience
+    • Priority support
+    • Faster responses
+    • All features unlocked
+    
+    **⏰ TIME SETTINGS:**
+    • Set different timings for each feature
+    • Options: 2min, 5min, 10min, 30min, 1hr, Permanent
+    
+    Use buttons below to configure:
+    """
+    
+    await message.reply(
+        functions_text,
+        reply_markup=buttons.features_menu(message.chat.id)
+    )
 
 # ========== STATS COMMAND ==========
 @bot.on_message(filters.command("stats") & filters.user(Config.OWNER_ID))
 async def stats_command(client: Client, message: Message):
-    """Show bot statistics"""
-    stats = await db.get_stats()
+    """Show bot statistics (Owner only)"""
+    stats = await db.get_bot_stats()
     
     stats_text = f"""
-    **📊 BOT STATISTICS** 📈
-
-    👤 **Total Users:** `{stats['users']:,}`
-    👥 **Total Groups:** `{stats['groups']:,}`
-    🚫 **Blocked Users:** `{stats['blocked']:,}`
-
-    **💾 DATABASE:**
-    • MongoDB: ✅ Connected
-    • Storage: Calculating...
-
-    **⚡ BOT STATUS:**
-    • Uptime: 100%
-    • Memory: Optimal
-    • API: Working ✅
-
-    **👨‍💻 Owner:** @asbhai_bsr
+    📊 **BOT STATISTICS** 📈
+    
+    **👥 Users:**
+    • Total Users: {stats['total_users']}
+    • Blocked Users: {stats['blocked_users']}
+    
+    **👥 Groups:**
+    • Total Groups: {stats['total_groups']}
+    
+    **💎 Premium:**
+    • Active Premium: {stats['premium_stats']['active_premium']}
+    • Total Premium: {stats['premium_stats']['total_premium']}
+    • Expired Premium: {stats['premium_stats']['expired_premium']}
+    
+    **🎬 Requests:**
+    • Total Requests: {stats['total_requests']}
+    • Pending Requests: {stats['pending_requests']}
+    • Today's Requests: {stats['today_requests']}
+    
+    **📈 Usage:**
+    • Bot is running 24/7
+    • Koyeb Port: {Config.PORT}
+    • Version: 2.0
     """
+    
     await message.reply(stats_text)
 
-# ========== BROADCAST COMMAND ==========
+# ========== BROADCAST COMMAND (AD-FREE FOR PREMIUM) ==========
 @bot.on_message(filters.command("broadcast") & filters.user(Config.OWNER_ID))
 async def broadcast_command(client: Client, message: Message):
-    """Broadcast message to all users"""
+    """Broadcast message to all groups (skip premium)"""
     if not message.reply_to_message:
-        await message.reply("Please reply to a message to broadcast!")
-        return
+        return await message.reply("Reply to a message to broadcast.")
     
-    await broadcast_handler.send_broadcast(client, message.reply_to_message)
-
-# ========== CLEAR JUNK COMMAND ==========
-@bot.on_message(filters.command("clearjunk") & filters.user(Config.OWNER_ID))
-async def clear_junk_command(client: Client, message: Message):
-    """Clear blocked/deleted users"""
-    deleted = await db.clear_junk()
-    await message.reply(f"✅ **Cleanup Complete!**\n\nRemoved {deleted} blocked/deleted users.")
-
-# ========== FSUB COMMAND ==========
-@bot.on_message(filters.command("fsub") & filters.group)
-async def fsub_setup_command(client: Client, message: Message):
-    """Setup force subscribe"""
-    # Check if user is admin
-    try:
-        user = await client.get_chat_member(message.chat.id, message.from_user.id)
-        if user.status not in ["creator", "administrator"]:
-            await message.reply("❌ You need to be admin to use this command!")
-            return
-    except:
-        pass
+    all_groups = await db.db.groups.find().to_list(None)
+    sent = 0
+    skipped_premium = 0
     
-    # Get channel from command
-    if len(message.command) < 2:
-        await message.reply(
-            "**Usage:** `/fsub @channelusername`\n\n"
-            "**Example:** `/fsub @asbhai_bsr`\n"
-            "**Max 3 channels:** `/fsub @channel1 @channel2 @channel3`"
-        )
-        return
+    for group in all_groups:
+        chat_id = group['chat_id']
+        
+        # Skip if Premium (Ad-free)
+        if await db.check_premium(chat_id):
+            skipped_premium += 1
+            continue
+            
+        try:
+            await message.reply_to_message.copy(chat_id)
+            sent += 1
+            await asyncio.sleep(0.5)  # Avoid flood
+        except:
+            pass
     
-    channels = message.command[1:]
-    if len(channels) > Config.MAX_FSUB_CHANNELS:
-        await message.reply(f"❌ Maximum {Config.MAX_FSUB_CHANNELS} channels allowed!")
-        return
-    
-    # Save to database
-    await db.set_fsub(message.chat.id, channels)
-    
-    channels_list = "\n".join([f"• {ch}" for ch in channels])
     await message.reply(
-        f"✅ **Force Subscribe Enabled!**\n\n"
-        f"Users must join these channels:\n{channels_list}\n\n"
-        f"To disable: `/offfsub`"
+        f"✅ Broadcast completed!\n"
+        f"• Sent to: {sent} groups\n"
+        f"• Skipped (Premium): {skipped_premium} groups\n"
+        f"• Total groups: {len(all_groups)}"
     )
 
-# ========== OFF FSUB COMMAND ==========
-@bot.on_message(filters.command("offfsub") & filters.group)
-async def off_fsub_command(client: Client, message: Message):
-    """Disable force subscribe"""
-    await db.disable_fsub(message.chat.id)
-    await message.reply("✅ Force Subscribe has been disabled!")
-
-# ========== FORCE JOIN COMMAND ==========
-@bot.on_message(filters.command("forcejoin") & filters.group)
-async def force_join_command(client: Client, message: Message):
-    """Setup force join"""
-    # Check admin
-    try:
-        user = await client.get_chat_member(message.chat.id, message.from_user.id)
-        if user.status not in ["creator", "administrator"]:
-            await message.reply("❌ You need to be admin!")
-            return
-    except:
-        pass
-    
-    if len(message.command) < 2:
-        await message.reply(
-            "**Usage:** `/forcejoin NUMBER`\n\n"
-            "**Options:** 1, 2, 3, 5, 10\n"
-            "**Example:** `/forcejoin 2`\n"
-            "Users will need to add 2 members before posting."
-        )
-        return
-    
-    try:
-        count = int(message.command[1])
-        if count not in Config.FORCE_JOIN_OPTIONS:
-            await message.reply(f"❌ Invalid number! Use: {', '.join(map(str, Config.FORCE_JOIN_OPTIONS))}")
-            return
-        
-        await db.set_force_join(message.chat.id, count)
-        await message.reply(
-            f"✅ **Force Join Enabled!**\n\n"
-            f"New users must add **{count} members** to this group.\n"
-            f"To disable: `/offforcejoin`"
-        )
-    except ValueError:
-        await message.reply("❌ Please provide a valid number!")
-
-# ========== OFF FORCE JOIN COMMAND ==========
-@bot.on_message(filters.command("offforcejoin") & filters.group)
-async def off_force_join_command(client: Client, message: Message):
-    """Disable force join"""
-    await db.disable_force_join(message.chat.id)
-    await message.reply("✅ Force Join has been disabled!")
-
-# ========== MAIN GROUP HANDLER ==========
+# ========== MAIN GROUP MESSAGE HANDLER ==========
 @bot.on_message(filters.group & ~filters.bot & ~filters.service)
 async def group_message_handler(client: Client, message: Message):
     """Handle all group messages"""
-    user_id = message.from_user.id
     chat_id = message.chat.id
+    user_id = message.from_user.id
     text = message.text or message.caption or ""
     
-    # Skip if message is too short
+    # Update user activity
+    await db.update_user_activity(user_id)
+    
+    # Check if message is a file/video/photo for auto-clean
+    file_info = await feature_manager.extract_file_info(message)
+    if file_info and await db.get_feature_status(chat_id, "file_cleaner"):
+        settings = await db.get_group_settings(chat_id)
+        clean_time = settings['file_clean_time']
+        
+        if clean_time > 0:
+            await db.add_file_to_cleaner(chat_id, message.id, clean_time)
+    
+    # Skip short messages
     if len(text) < 3:
         return
     
-    # 1. Check Force Subscribe
-    fsub_result, channel = await fsub_handler.check_user(client, chat_id, user_id)
-    if not fsub_result:
-        await fsub_handler.send_fsub_message(client, chat_id, user_id, channel)
-        return
-    
-    # 2. Check Force Join
-    fjoin_result = await fjoin_handler.check_force_join(client, chat_id, user_id)
-    if not fjoin_result:
-        count = fjoin_result[1]
-        await fjoin_handler.send_force_join_message(client, chat_id, user_id, count)
-        return
-    
-    # 3. Check Movie Name
-    query, year = await movie_checker.extract_query(text)
-    
-    if query and len(query) > 2:
-        # Check spelling
-        spell_result = await movie_checker.check_spelling(query)
+    # Check for movie name (if features enabled)
+    if len(text) > 2:
+        # Extract clean movie name
+        query, year = await feature_manager.extract_movie_name(text)
         
-        # Check if season required
-        season_required = await movie_checker.check_season_required(text)
-        
-        # Prepare response if needed
-        if not spell_result.get('is_correct', True) or season_required:
-            keyboard_buttons = []
+        if query and len(query) > 2:
+            responses = []
             
-            # Add language buttons
-            keyboard_buttons.append([
-                InlineKeyboardButton("🇮🇳 Hindi", callback_data=f"lang_hi_{query}"),
-                InlineKeyboardButton("🇬🇧 English", callback_data=f"lang_en_{query}")
-            ])
+            # Spelling Check
+            if await db.get_feature_status(chat_id, "spell_check"):
+                spell_result = await feature_manager.check_spelling_correction(query)
+                if spell_result['needs_correction']:
+                    responses.append(f"**🔤 Did you mean:** {spell_result['suggested']}")
             
-            # Add correct name button
-            if not spell_result.get('is_correct', True):
-                corrected = spell_result.get('corrected', query)
-                keyboard_buttons.append([
-                    InlineKeyboardButton(f"✅ {corrected}", 
-                     callback_data=f"movie_details_{corrected}")
-                ])
+            # Season Check  
+            if await db.get_feature_status(chat_id, "season_check"):
+                needs_season, suggestion = await feature_manager.check_season_requirement(text)
+                if needs_season:
+                    responses.append(f"**📺 Add season:** {suggestion}")
             
-            keyboard = InlineKeyboardMarkup(keyboard_buttons)
-            
-            # Prepare message
-            if season_required:
-                msg_text = f"❌ **Season Missing!**\n\nPlease add season number:\n**{query} S01**"
-            else:
-                msg_text = f"🔍 **Spelling Check:**\n\nDid you mean: **{spell_result.get('corrected', query)}**?"
-            
-            # Send message
-            sent_msg = await message.reply(msg_text, reply_markup=keyboard)
-            
-            # Auto delete after 5 minutes
-            await asyncio.sleep(Config.AUTO_DELETE_TIME)
-            try:
-                await sent_msg.delete()
-            except:
-                pass
+            # Send response if needed
+            if responses:
+                response_text = "\n\n".join(responses)
+                
+                # Add suggestion buttons
+                keyboard_buttons = []
+                
+                if 'spell_result' in locals() and spell_result['needs_correction']:
+                    keyboard_buttons.append([
+                        InlineKeyboardButton(f"✅ {spell_result['suggested']}", 
+                         callback_data=f"use_suggested_{spell_result['suggested']}")
+                    ])
+                
+                if needs_season:
+                    keyboard_buttons.append([
+                        InlineKeyboardButton(f"📺 {suggestion}", 
+                         callback_data=f"add_season_full_{suggestion}")
+                    ])
+                
+                if keyboard_buttons:
+                    keyboard = InlineKeyboardMarkup(keyboard_buttons)
+                    sent_msg = await message.reply(response_text, reply_markup=keyboard)
+                else:
+                    sent_msg = await message.reply(response_text)
+                
+                # Auto delete if enabled
+                if await db.get_feature_status(chat_id, "auto_delete"):
+                    delete_time = (await db.get_group_settings(chat_id))['auto_delete_time']
+                    if delete_time > 0:
+                        await asyncio.sleep(delete_time)
+                        try:
+                            await sent_msg.delete()
+                        except:
+                            pass
 
 # ========== CALLBACK QUERY HANDLER ==========
 @bot.on_callback_query()
 async def callback_handler(client: Client, callback: CallbackQuery):
-    """Handle button clicks"""
+    """Handle all button clicks"""
     data = callback.data
     user_id = callback.from_user.id
+    chat_id = callback.message.chat.id if callback.message else None
     
-    # FSub Verification
-    if data.startswith("fsub_verify_"):
-        chat_id = callback.message.chat.id
-        target_user = int(data.split("_")[2])
+    # Feature Toggles
+    if data.startswith("toggle_"):
+        feature = data.replace("toggle_", "")
+        settings = await db.get_group_settings(chat_id)
+        current = settings['features'].get(feature, True)
+        new_value = not current
         
-        if user_id != target_user:
-            await callback.answer("This button is not for you!", show_alert=True)
-            return
+        await db.toggle_feature(chat_id, feature, new_value)
         
-        # Check if user joined
-        channels = await db.get_fsub(chat_id)
-        all_joined = True
+        status = "✅ ENABLED" if new_value else "❌ DISABLED"
+        await callback.answer(f"{feature.replace('_', ' ').title()} {status}!")
         
-        for channel in channels:
-            try:
-                member = await client.get_chat_member(channel, user_id)
-                if member.status in ['left', 'kicked']:
-                    all_joined = False
-                    break
-            except:
-                all_joined = False
-        
-        if all_joined:
-            await callback.message.delete()
-            await callback.answer("✅ Verified! You can now post.", show_alert=True)
-        else:
-            await callback.answer("❌ Please join all channels first!", show_alert=True)
+        # Refresh settings message
+        if callback.message:
+            await settings_command(client, callback.message)
     
-    # Force Join Verification
-    elif data.startswith("fjoin_verify_"):
-        chat_id = callback.message.chat.id
-        target_user = int(data.split("_")[2])
-        
-        if user_id != target_user:
-            await callback.answer("This button is not for you!", show_alert=True)
-            return
-        
-        # Mark as verified
-        await db.set_verified(chat_id, user_id)
-        
-        # Unmute user
-        try:
-            await client.restrict_chat_member(
-                chat_id=chat_id,
-                user_id=user_id,
-                permissions=ChatPermissions(
-                    can_send_messages=True,
-                    can_send_media_messages=True,
-                    can_send_other_messages=True,
-                    can_add_web_page_previews=True
-                )
+    # Premium Status Check
+    elif data == "check_premium_status":
+        if chat_id:
+            is_premium = await db.check_premium(chat_id)
+            settings = await db.get_group_settings(chat_id)
+            expiry = settings.get('premium_expiry')
+            
+            status_text = premium_ui.premium_status_text(chat_id, is_premium, expiry)
+            await callback.message.edit(
+                text=status_text,
+                reply_markup=buttons.premium_status_buttons(is_premium),
+                disable_web_page_preview=True
             )
-        except:
-            pass
-        
-        await callback.message.delete()
-        await callback.answer("✅ Verified! You can now post.", show_alert=True)
     
-    # Movie Details
-    elif data.startswith("movie_details_"):
-        movie_name = data.split("_", 2)[2]
-        details = await movie_checker.get_movie_details(movie_name)
-        
-        if details:
-            text = f"""
-            🎬 **{details['title']}** ({details['year']})
-            
-            ⭐ **Rating:** {details['rating']}/10
-            
-            📝 **Plot:** {details['overview']}
-            
-            🎥 **Get this movie:**
-            {Config.MOVIE_CHANNEL}
-            
-            **Note:** Contact @asfilter_bot for movies
-            """
-            
-            if details.get('poster'):
-                await callback.message.reply_photo(
-                    photo=details['poster'],
-                    caption=text
-                )
-            else:
-                await callback.message.reply(text)
-        else:
-            await callback.answer("Details not found!", show_alert=True)
-    
-    # Help button
-    elif data == "help":
+    # Time Setting Menu
+    elif data == "set_time_menu":
         await callback.message.edit(
-            text="Help section will be here...",
+            text="⏰ **Select Time Setting to Configure:**",
+            reply_markup=buttons.time_selection_menu("menu")
+        )
+    
+    # Set Specific Time
+    elif data.startswith("set_time_"):
+        parts = data.split("_")
+        if len(parts) >= 4:
+            feature_type = parts[2]
+            time_seconds = int(parts[3])
+            
+            if feature_type == "auto_delete":
+                await db.set_auto_delete_time(chat_id, time_seconds)
+            elif feature_type == "file_clean":
+                await db.set_file_clean_time(chat_id, time_seconds)
+            elif feature_type == "cooldown":
+                await db.update_group_settings(chat_id, {"cooldown_time": time_seconds})
+            
+            time_text = "Permanent" if time_seconds == 0 else f"{time_seconds//60} minutes"
+            await callback.answer(f"⏰ {feature_type.replace('_', ' ').title()} set to {time_text}!")
+    
+    # Use Suggested Name
+    elif data.startswith("use_suggested_"):
+        suggested = data.replace("use_suggested_", "")
+        await callback.message.edit(
+            text=f"✅ **Using:** {suggested}\n\nMovie request updated!",
+            reply_markup=None
+        )
+        await callback.answer("Name updated!")
+    
+    # Add Season
+    elif data.startswith("add_season_full_"):
+        season_name = data.replace("add_season_full_", "")
+        await callback.message.edit(
+            text=f"✅ **Season Added:** {season_name}",
+            reply_markup=None
+        )
+        await callback.answer("Season number added!")
+    
+    # Show Features
+    elif data == "show_features":
+        await callback.message.edit(
+            text="⚙️ **Feature Configuration**\n\nToggle features ON/OFF:",
+            reply_markup=buttons.features_menu(chat_id)
+        )
+    
+    # Back to Start
+    elif data == "back_to_start":
+        await callback.message.delete()
+        await start_command(client, callback.message)
+    
+    # Show Help
+    elif data == "show_help":
+        help_text = """
+        🆘 **HELP GUIDE** 📖
+
+        **📌 HOW TO USE:**
+        1. Add bot to group
+        2. Make bot admin
+        3. Use `/settings` to configure
+        4. Members can request movies with `/request`
+
+        **🔧 ADMIN COMMANDS:**
+        • `/settings` - Configure bot features
+        • `/function` - Show all functions
+        • `/stats` - View group statistics
+        • `/broadcast` - Send message to all groups
+        • `/clean` - Clean old files
+
+        **💎 PREMIUM COMMANDS:**
+        • `/premium` - Show premium plans
+        • `/addpremium <group_id>` - Add premium (Owner only)
+
+        **👤 USER COMMANDS:**
+        • `/request Movie Name` - Request a movie
+        • `/myrequests` - View your requests
+        • `/help` - Show this guide
+
+        **📞 SUPPORT:** @asbhai_bsr
+        """
+        
+        await callback.message.edit(
+            text=help_text,
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("« Back", callback_data="back_to_start")
+                InlineKeyboardButton("🔙 Back", callback_data="back_to_start"),
+                InlineKeyboardButton("💎 Premium", callback_data="show_premium")
             ]])
         )
     
-    # Stats button
-    elif data == "stats":
-        stats = await db.get_stats()
-        text = f"Users: {stats['users']}\nGroups: {stats['groups']}"
-        await callback.answer(text, show_alert=True)
+    # Show Stats
+    elif data == "show_stats":
+        if user_id == Config.OWNER_ID:
+            await stats_command(client, callback.message)
+        else:
+            await callback.answer("Only owner can view stats!", show_alert=True)
+    
+    # Request Movie
+    elif data == "request_movie":
+        await callback.message.edit(
+            text="🎬 **Movie Request**\n\nPlease use `/request Movie Name` in a group where I'm added!\n\nExample: `/request Kalki 2898 AD`",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 Back", callback_data="back_to_start")
+            ]])
+        )
     
     await callback.answer()
 
+# ========== FILE CLEANER TASK ==========
+async def file_cleaner_task():
+    """Background task to clean files"""
+    while True:
+        try:
+            files_to_clean = await db.get_files_to_clean()
+            
+            for file_data in files_to_clean:
+                try:
+                    await bot.delete_messages(
+                        chat_id=file_data['chat_id'],
+                        message_ids=file_data['message_id']
+                    )
+                    await db.mark_file_cleaned(file_data['message_id'])
+                except Exception as e:
+                    print(f"Failed to delete file: {e}")
+            
+            # Clean old data weekly
+            if len(files_to_clean) > 0:
+                cleaned = await db.cleanup_old_data()
+                print(f"Cleaned {cleaned['old_requests']} old requests and {cleaned['old_files']} old files")
+            
+        except Exception as e:
+            print(f"File cleaner error: {e}")
+        
+        # Check every 30 seconds
+        await asyncio.sleep(30)
+
+# ========== KEEP-ALIVE PING TASK ==========
+async def keep_alive_task():
+    """Send periodic pings to keep Koyeb alive"""
+    while True:
+        try:
+            # Access Flask endpoint to keep it alive
+            import urllib.request
+            urllib.request.urlopen(f"http://0.0.0.0:{Config.PORT}/ping").read()
+        except:
+            pass
+        
+        # Ping every 30 seconds
+        await asyncio.sleep(30)
+
 # ========== BOT STARTUP ==========
 async def main():
-    """Main function to start bot"""
+    """Start the bot"""
     # Start Flask server in background
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    print("🌐 Flask server started on port", Config.PORT)
+    print(f"🌐 Flask running on port {Config.PORT}")
     
     # Initialize database
     if not await db.init_db():
-        print("❌ Failed to connect to MongoDB!")
+        print("❌ Failed to connect to database!")
         return
-    
-    print("💾 Database connected successfully!")
     
     # Start bot
     await bot.start()
+    print("🤖 Bot started successfully!")
     
-    # Send startup message
+    # Start background tasks
+    asyncio.create_task(file_cleaner_task())
+    asyncio.create_task(keep_alive_task())
+    
+    # Send startup message to owner
     try:
+        stats = await db.get_bot_stats()
         await bot.send_message(
             Config.OWNER_ID,
-            f"🤖 **Bot Started Successfully!**\n\n"
+            f"🎬 **Movie Bot Pro Started!**\n\n"
             f"✅ Database: Connected\n"
-            f"✅ Flask: Running on port {Config.PORT}\n"
-            f"✅ Pyrogram: v2.0.106\n\n"
-            f"Made with ❤️ by @asbhai_bsr"
+            f"✅ Flask: Port {Config.PORT}\n"
+            f"✅ Users: {stats['total_users']}\n"
+            f"✅ Groups: {stats['total_groups']}\n"
+            f"✅ Premium Groups: {stats['premium_stats']['active_premium']}\n\n"
+            f"Made with ❤️ by @asbhai_bsr\n"
+            f"Bot: @{Config.BOT_USERNAME}"
         )
-    except:
-        pass
+    except Exception as e:
+        print(f"Failed to send startup message: {e}")
     
-    print("✅ Bot is now running! Press Ctrl+C to stop.")
+    print("✅ Bot is running! Press Ctrl+C to stop.")
     
     # Keep running
     await idle()
@@ -500,6 +749,6 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n❌ Bot stopped by user!")
+        print("\n❌ Bot stopped by user")
     except Exception as e:
         print(f"❌ Error: {e}")
