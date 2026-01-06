@@ -1,0 +1,73 @@
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from config import Config
+
+class PremiumManager:
+    @staticmethod
+    def main_premium_text():
+        return """
+💎 **MOVIE BOT PRO PREMIUM** 💎
+
+Upgrade karein aur payein behtareen features:
+
+✅ **AD-FREE Experience:** Aapke group mein koi broadcast ads nahi ayenge.
+✅ **High Speed:** Bot fast response karega.
+✅ **Priority Support:** Admin support directly milega.
+✅ **Unlimited Requests:** Koi daily limit nahi.
+✅ **Custom Branding:** Bot mein apna channel name set karein.
+
+💰 **PRICING:**
+• 5 Months: ₹300
+• 1 Year (12 Months): ₹500
+• 2 Years (24 Months): ₹1000
+
+⚠️ **Note:** Promotion ke liye bhi contact karein.
+"""
+
+    @staticmethod
+    def premium_buttons():
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("💳 Buy Premium / Contact Owner", url="https://t.me/asbhaibsr")],
+            [InlineKeyboardButton("🎬 Request Movies", callback_data="request_movie")],
+            [InlineKeyboardButton("🔙 Back to Menu", callback_data="back_to_start")]
+        ])
+
+    @staticmethod
+    def admin_premium_select(group_id: int):
+        return InlineKeyboardMarkup([
+            [InlineKeyboardButton("5 Months (₹300)", callback_data=f"addprem_{group_id}_5")],
+            [InlineKeyboardButton("1 Year (₹500)", callback_data=f"addprem_{group_id}_12")],
+            [InlineKeyboardButton("2 Years (₹1000)", callback_data=f"addprem_{group_id}_24")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="close")]
+        ])
+    
+    @staticmethod
+    def premium_status_text(chat_id: int, is_premium: bool, expiry_date=None):
+        if not is_premium:
+            return """
+🔴 **PREMIUM STATUS: NOT ACTIVE**
+            
+Your group is currently using FREE version.
+Some features may be limited and ads may appear.
+
+**Upgrade to Premium for:**
+✅ No Ads
+✅ Faster Responses
+✅ Priority Support
+✅ All Features Unlocked
+
+Click below to upgrade:
+"""
+        else:
+            return f"""
+🟢 **PREMIUM STATUS: ACTIVE**
+            
+✅ Your group has PREMIUM subscription!
+✅ No ads will be shown
+✅ All features are unlocked
+
+**Expiry Date:** {expiry_date.strftime('%Y-%m-%d')}
+
+Thank you for choosing Movie Bot Pro!
+"""
+
+premium_ui = PremiumManager()
