@@ -1,13 +1,15 @@
-# features.py - UPDATED WITH MOVIE DETAILS
-
 import re
 import asyncio
 from typing import Tuple, Optional, Dict
 from fuzzywuzzy import fuzz
 import aiohttp
 from bs4 import BeautifulSoup
+from imdb import IMDb
 
 class FeatureManager:
+    def __init__(self):
+        self.ia = IMDb()
+    
     @staticmethod
     async def extract_movie_name(text: str) -> Tuple[str, str]:
         remove_patterns = [
@@ -33,13 +35,28 @@ class FeatureManager:
         
         return clean_text.strip(), year
     
-    @staticmethod
-    async def check_spelling_correction(query: str) -> Dict:
+    async def check_spelling_correction(self, query: str) -> Dict:
         try:
             # Clean query first
             clean_query = ' '.join([word.capitalize() for word in query.split()])
             
-            # Wikipedia API
+            # IMDb search for exact match
+            search_results = self.ia.search_movie(clean_query)
+            if search_results:
+                movie = search_results[0]
+                title = movie.get('title', clean_query)
+                ratio = fuzz.ratio(query.lower(), title.lower())
+                
+                if ratio < 85 and ratio > 50:
+                    return {
+                        'original': query,
+                        'suggested': title,
+                        'confidence': ratio,
+                        'needs_correction': True,
+                        'source': 'imdb'
+                    }
+            
+            # Wikipedia API fallback
             wiki_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={clean_query}&format=json"
             
             async with aiohttp.ClientSession() as session:
@@ -51,7 +68,6 @@ class FeatureManager:
                             title = result.get('title', clean_query)
                             ratio = fuzz.ratio(query.lower(), title.lower())
                             
-                            # Only suggest if confidence is low
                             if ratio < 85 and ratio > 50:
                                 return {
                                     'original': query,
@@ -59,26 +75,6 @@ class FeatureManager:
                                     'confidence': ratio,
                                     'needs_correction': True,
                                     'source': 'wikipedia'
-                                }
-            
-            # If Wikipedia fails, check OMDb API (free)
-            omdb_url = f"http://www.omdbapi.com/?apikey=free&t={clean_query}&plot=short"
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.get(omdb_url, timeout=5) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        if data.get('Response') == 'True':
-                            title = data.get('Title', clean_query)
-                            ratio = fuzz.ratio(query.lower(), title.lower())
-                            
-                            if ratio < 85 and ratio > 50:
-                                return {
-                                    'original': query,
-                                    'suggested': title,
-                                    'confidence': ratio,
-                                    'needs_correction': True,
-                                    'source': 'omdb'
                                 }
             
             return {
@@ -113,6 +109,8 @@ class FeatureManager:
             r'S\d+',
             r'Season\s*\d+',
             r'S\.\d+',
+            r's\d+',
+            r'season\s*\d+',
             r'\s\d+st\s',
             r'\s\d+nd\s',
             r'\s\d+rd\s',
@@ -129,11 +127,18 @@ class FeatureManager:
             base_name = base_name.replace(keyword, '').strip()
         
         # Remove common words
-        common_words = ['download', 'full', 'hd', 'movie', 'film']
+        common_words = ['download', 'full', 'hd', 'movie', 'film', 'de', 'do', 'bhai', 'send']
         for word in common_words:
             base_name = base_name.replace(word, '').strip()
         
-        suggested = f"{base_name} Season 1" if base_name else "Season 1"
+        # Check if season format exists (like s01, s1, season 1)
+        season_match = re.search(r'(s|season)(\d+)', text_lower, re.IGNORECASE)
+        if season_match:
+            season_num = season_match.group(2)
+            suggested = f"{base_name} Season {season_num}"
+        else:
+            suggested = f"{base_name} Season 1" if base_name else "Season 1"
+        
         return True, suggested
     
     @staticmethod
@@ -141,7 +146,8 @@ class FeatureManager:
         phrases_to_remove = [
             'movie de do', 'movie chahiye', 'movie dena', 'film do',
             'please send', 'please share', 'link chahiye', 'download',
-            'de do bhai', 'bhejo bhai', 'do yaar', 'ka link', 'ki link'
+            'de do bhai', 'bhejo bhai', 'do yaar', 'ka link', 'ki link',
+            'bhai', 'bro', 'please', 'plz'
         ]
         
         clean_text = text.lower()
@@ -197,71 +203,96 @@ class FeatureManager:
         
         return None
     
-    @staticmethod
-    async def get_movie_details(movie_name: str) -> Dict:
-        """Get movie details from OMDb API"""
+    async def get_movie_details(self, movie_name: str) -> Dict:
+        """Get movie details from IMDb"""
         try:
-            clean_name = movie_name.replace(' ', '+')
-            omdb_url = f"http://www.omdbapi.com/?apikey=free&t={clean_name}&plot=short"
+            # Search movie
+            search_results = self.ia.search_movie(movie_name)
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(omdb_url, timeout=10) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        if data.get('Response') == 'True':
-                            return {
-                                'success': True,
-                                'title': data.get('Title', movie_name),
-                                'year': data.get('Year', 'N/A'),
-                                'rating': data.get('imdbRating', 'N/A'),
-                                'duration': data.get('Runtime', 'N/A'),
-                                'genre': data.get('Genre', 'N/A'),
-                                'director': data.get('Director', 'N/A'),
-                                'plot': data.get('Plot', 'No description available.'),
-                                'poster': data.get('Poster', ''),
-                                'actors': data.get('Actors', 'N/A'),
-                                'language': data.get('Language', 'N/A')
-                            }
+            if not search_results:
+                return {
+                    'success': False,
+                    'title': movie_name,
+                    'message': 'Movie not found on IMDb. Try different name.'
+                }
             
-            # Fallback to Wikipedia
-            wiki_url = f"https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro&explaintext&titles={clean_name}&format=json"
+            # Get first result
+            movie = search_results[0]
+            self.ia.update(movie)
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(wiki_url, timeout=10) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        pages = data.get('query', {}).get('pages', {})
-                        for page_id, page_data in pages.items():
-                            if page_id != '-1':
-                                extract = page_data.get('extract', '')
-                                if extract:
-                                    # Get first paragraph
-                                    paragraphs = extract.split('\n')
-                                    plot = paragraphs[0] if paragraphs else 'No description available.'
-                                    
-                                    return {
-                                        'success': True,
-                                        'title': page_data.get('title', movie_name),
-                                        'plot': plot[:500] + '...' if len(plot) > 500 else plot,
-                                        'year': 'N/A',
-                                        'rating': 'N/A',
-                                        'duration': 'N/A',
-                                        'genre': 'N/A',
-                                        'director': 'N/A',
-                                        'source': 'wikipedia'
-                                    }
+            # Extract details
+            title = movie.get('title', movie_name)
+            year = movie.get('year', 'N/A')
+            rating = movie.get('rating', 'N/A')
+            genres = ", ".join(movie.get('genres', ['N/A']))
+            runtime = movie.get('runtimes', ['N/A'])[0] + " min" if movie.get('runtimes') else 'N/A'
+            
+            # Get plot (try different sources)
+            plot = 'No description available.'
+            if movie.get('plot outline'):
+                plot = movie.get('plot outline')
+            elif movie.get('plot'):
+                plots = movie.get('plot')
+                if plots and len(plots) > 0:
+                    plot = plots[0]
+            
+            # Truncate plot if too long
+            if len(plot) > 500:
+                plot = plot[:500] + "..."
+            
+            # Get poster URL
+            poster = None
+            if movie.get('full-size cover url'):
+                poster = movie.get('full-size cover url')
+            elif movie.get('cover url'):
+                poster = movie.get('cover url')
+            
+            # Get cast (first 3)
+            cast = []
+            if movie.get('cast'):
+                for person in movie.get('cast')[:3]:
+                    cast.append(person.get('name'))
+            
+            # Get directors
+            directors = []
+            if movie.get('directors'):
+                for director in movie.get('directors'):
+                    directors.append(director.get('name'))
+            
+            details_text = f"""
+🎬 **{title}** ({year})
+
+⭐ **Rating:** {rating}/10
+🎭 **Genres:** {genres}
+⏳ **Runtime:** {runtime}
+🎬 **Director:** {', '.join(directors) if directors else 'N/A'}
+👥 **Cast:** {', '.join(cast) if cast else 'N/A'}
+
+📖 **Plot:**
+{plot}
+
+🔗 **IMDb:** https://www.imdb.com/title/tt{movie.movieID}/
+"""
             
             return {
-                'success': False,
-                'title': movie_name,
-                'message': 'Details not found. Try searching on @asfilter_bot'
+                'success': True,
+                'title': title,
+                'year': year,
+                'rating': rating,
+                'genre': genres,
+                'duration': runtime,
+                'director': ', '.join(directors) if directors else 'N/A',
+                'plot': plot,
+                'poster': poster,
+                'imdb_id': movie.movieID,
+                'text': details_text
             }
             
         except Exception as e:
             return {
                 'success': False,
                 'title': movie_name,
-                'message': f'Error fetching details: {str(e)}'
+                'message': f'Error: {str(e)}'
             }
 
 feature_manager = FeatureManager()
