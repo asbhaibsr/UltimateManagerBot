@@ -94,13 +94,13 @@ def run_flask():
     """Run Flask server for Koyeb health checks"""
     app.run(host='0.0.0.0', port=Config.PORT, debug=False, use_reloader=False)
 
-# Initialize Bot
+# ========== Is hisse mein workers kam kar diye hain aur error handling badha di hai ==========
 bot = Client(
     name="MovieBotPro",
     api_id=Config.API_ID,
     api_hash=Config.API_HASH,
     bot_token=Config.BOT_TOKEN,
-    workers=100,
+    workers=20,  # 100 se ghata kar 20 kar diya (Koyeb ke liye best hai)
     sleep_threshold=60
 )
 
@@ -674,55 +674,71 @@ async def file_cleaner_task():
                     )
                     await db.mark_file_cleaned(file_data['message_id'])
                 except Exception as e:
-                    print(f"Failed to delete file: {e}")
+                    logging.warning(f"Failed to delete file: {e}")
             
             # Clean old data weekly
             if len(files_to_clean) > 0:
                 cleaned = await db.cleanup_old_data()
-                print(f"Cleaned {cleaned['old_requests']} old requests and {cleaned['old_files']} old files")
+                logging.info(f"Cleaned {cleaned['old_requests']} old requests and {cleaned['old_files']} old files")
             
         except Exception as e:
-            print(f"File cleaner error: {e}")
+            logging.error(f"File cleaner error: {e}")
         
         # Check every 30 seconds
         await asyncio.sleep(30)
 
+# ========== BOT STARTUP (Optimized) ==========
 async def main():
     """Start the bot"""
-    print("🚀 Bot starting...")
+    logging.info("🚀 Starting Bot...")
     
-    # 1. Database Initialize karein
-    if not await db.init_db():
-        print("❌ Failed to connect to database!")
+    # 1. Database Initialize
+    try:
+        if not await db.init_db():
+            logging.error("❌ Database Connection Failed!")
+            return
+    except Exception as e:
+        logging.error(f"❌ DB Error: {e}")
         return
     
-    # 2. Bot Start karein
+    # 2. Bot Start
     await bot.start()
-    print("🤖 Bot is Online!")
+    
+    # Get Bot Info for confirmation
+    me = await bot.get_me()
+    logging.info(f"🤖 Bot is Online: @{me.username}")
 
-    # 3. Background tasks start karein
+    # 3. Start Background Tasks
     asyncio.create_task(file_cleaner_task())
     
-    # Startup message
+    # Owner ko message bhejna (Testing ke liye)
     try:
-        await bot.send_message(Config.OWNER_ID, "✅ Bot has been deployed and is now Online!")
-    except:
-        pass
+        await bot.send_message(
+            Config.OWNER_ID, 
+            f"✅ **Bot Restarted Successfully!**\n\n"
+            f"User: @{me.username}\n"
+            f"Status: Ready to process messages."
+        )
+    except Exception as e:
+        logging.warning(f"Could not send startup message: {e}")
     
-    # 4. Bot ko chalta rehne dein
+    # 4. Idle - Ye bot ko chalte rehne ke liye zaroori hai
     await idle()
     
-    # 5. Stop bot gracefully
+    # 5. Stop
     await bot.stop()
 
 if __name__ == "__main__":
-    # Flask ko thread mein chalayein taki Koyeb health check pass ho jaye
-    t = Thread(target=run_flask)
-    t.daemon = True
-    t.start()
+    # Flask ko alag thread mein chalana
+    flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
     
-    # Bot ko main loop mein chalayein
+    # Pyrogram ka main loop
     try:
-        asyncio.run(main())
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(main())
     except KeyboardInterrupt:
-        print("Bot Stopped!")
+        logging.info("Stopping...")
+    except Exception as e:
+        logging.error(f"Main Error: {e}")
