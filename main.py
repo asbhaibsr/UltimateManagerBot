@@ -3,6 +3,7 @@ import os
 import sys
 import asyncio
 import logging
+import signal
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 
@@ -31,8 +32,14 @@ bot = Client(
     "MovieBotPro",
     api_id=Config.API_ID,
     api_hash=Config.API_HASH,
-    bot_token=Config.BOT_TOKEN
+    bot_token=Config.BOT_TOKEN,
+    workers=20,
+    sleep_threshold=60,
+    in_memory=True
 )
+
+# Global variable to control bot running
+running = True
 
 # ========== HELPER FUNCTIONS ==========
 async def is_admin(chat_id: int, user_id: int) -> bool:
@@ -979,9 +986,20 @@ async def stats_command(client: Client, message: Message):
     except Exception as e:
         logger.error(f"Stats command error: {e}")
 
-# ========== START BOT ==========
+# ========== SIGNAL HANDLERS ==========
+def signal_handler(signum, frame):
+    """Handle shutdown signals"""
+    global running
+    logger.info(f"Received signal {signum}, shutting down...")
+    running = False
+
+# ========== MAIN FUNCTION ==========
 async def main():
     """Main function"""
+    # Register signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     try:
         # Initialize database
         await db.init_db()
@@ -1007,15 +1025,28 @@ async def main():
         ])
         
         logger.info("✅ Bot commands set")
+        logger.info("✅ Bot is running...")
         
-        # Keep running
-        await asyncio.Event().wait()
+        # Keep bot running
+        while running:
+            await asyncio.sleep(1)
+        
+        logger.info("🛑 Shutting down bot...")
         
     except Exception as e:
         logger.error(f"❌ Main error: {e}")
     finally:
-        await bot.stop()
+        try:
+            await bot.stop()
+            logger.info("✅ Bot stopped successfully")
+        except Exception as e:
+            logger.error(f"❌ Error stopping bot: {e}")
 
 if __name__ == "__main__":
-    # Run the bot
-    asyncio.run(main())
+    try:
+        # Run the bot
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("👋 Bot stopped by user")
+    except Exception as e:
+        logger.error(f"❌ Unexpected error: {e}")
