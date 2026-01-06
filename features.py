@@ -1,4 +1,4 @@
-#  features.py
+# features.py - UPDATED WITH MOVIE DETAILS
 
 import re
 import asyncio
@@ -36,46 +36,54 @@ class FeatureManager:
     @staticmethod
     async def check_spelling_correction(query: str) -> Dict:
         try:
-            wiki_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={query}&format=json"
+            # Clean query first
+            clean_query = ' '.join([word.capitalize() for word in query.split()])
+            
+            # Wikipedia API
+            wiki_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={clean_query}&format=json"
             
             async with aiohttp.ClientSession() as session:
-                async with session.get(wiki_url) as resp:
+                async with session.get(wiki_url, timeout=5) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         if data.get('query', {}).get('search'):
                             result = data['query']['search'][0]
-                            title = result.get('title', query)
+                            title = result.get('title', clean_query)
                             ratio = fuzz.ratio(query.lower(), title.lower())
                             
-                            return {
-                                'original': query,
-                                'suggested': title,
-                                'confidence': ratio,
-                                'needs_correction': ratio < 85 and ratio > 50,
-                                'source': 'wikipedia'
-                            }
+                            # Only suggest if confidence is low
+                            if ratio < 85 and ratio > 50:
+                                return {
+                                    'original': query,
+                                    'suggested': title,
+                                    'confidence': ratio,
+                                    'needs_correction': True,
+                                    'source': 'wikipedia'
+                                }
             
-            ddg_url = f"https://api.duckduckgo.com/?q={query}+movie&format=json"
+            # If Wikipedia fails, check OMDb API (free)
+            omdb_url = f"http://www.omdbapi.com/?apikey=free&t={clean_query}&plot=short"
             
             async with aiohttp.ClientSession() as session:
-                async with session.get(ddg_url) as resp:
+                async with session.get(omdb_url, timeout=5) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-                        if data.get('Heading'):
-                            title = data['Heading']
+                        if data.get('Response') == 'True':
+                            title = data.get('Title', clean_query)
                             ratio = fuzz.ratio(query.lower(), title.lower())
                             
-                            return {
-                                'original': query,
-                                'suggested': title,
-                                'confidence': ratio,
-                                'needs_correction': ratio < 85 and ratio > 50,
-                                'source': 'duckduckgo'
-                            }
+                            if ratio < 85 and ratio > 50:
+                                return {
+                                    'original': query,
+                                    'suggested': title,
+                                    'confidence': ratio,
+                                    'needs_correction': True,
+                                    'source': 'omdb'
+                                }
             
             return {
                 'original': query,
-                'suggested': query,
+                'suggested': clean_query,
                 'confidence': 100,
                 'needs_correction': False,
                 'source': 'none'
@@ -115,11 +123,17 @@ class FeatureManager:
             if re.search(pattern, text, re.IGNORECASE):
                 return False, ""
         
+        # Extract base name
         base_name = text_lower
         for keyword in series_keywords:
             base_name = base_name.replace(keyword, '').strip()
         
-        suggested = f"{base_name} S01" if base_name else "S01"
+        # Remove common words
+        common_words = ['download', 'full', 'hd', 'movie', 'film']
+        for word in common_words:
+            base_name = base_name.replace(word, '').strip()
+        
+        suggested = f"{base_name} Season 1" if base_name else "Season 1"
         return True, suggested
     
     @staticmethod
@@ -127,10 +141,10 @@ class FeatureManager:
         phrases_to_remove = [
             'movie de do', 'movie chahiye', 'movie dena', 'film do',
             'please send', 'please share', 'link chahiye', 'download',
-            'de do bhai', 'bhejo bhai', 'do yaar'
+            'de do bhai', 'bhejo bhai', 'do yaar', 'ka link', 'ki link'
         ]
         
-        clean_text = text
+        clean_text = text.lower()
         for phrase in phrases_to_remove:
             clean_text = clean_text.replace(phrase, '')
         
@@ -182,5 +196,72 @@ class FeatureManager:
             }
         
         return None
+    
+    @staticmethod
+    async def get_movie_details(movie_name: str) -> Dict:
+        """Get movie details from OMDb API"""
+        try:
+            clean_name = movie_name.replace(' ', '+')
+            omdb_url = f"http://www.omdbapi.com/?apikey=free&t={clean_name}&plot=short"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(omdb_url, timeout=10) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        if data.get('Response') == 'True':
+                            return {
+                                'success': True,
+                                'title': data.get('Title', movie_name),
+                                'year': data.get('Year', 'N/A'),
+                                'rating': data.get('imdbRating', 'N/A'),
+                                'duration': data.get('Runtime', 'N/A'),
+                                'genre': data.get('Genre', 'N/A'),
+                                'director': data.get('Director', 'N/A'),
+                                'plot': data.get('Plot', 'No description available.'),
+                                'poster': data.get('Poster', ''),
+                                'actors': data.get('Actors', 'N/A'),
+                                'language': data.get('Language', 'N/A')
+                            }
+            
+            # Fallback to Wikipedia
+            wiki_url = f"https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro&explaintext&titles={clean_name}&format=json"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(wiki_url, timeout=10) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        pages = data.get('query', {}).get('pages', {})
+                        for page_id, page_data in pages.items():
+                            if page_id != '-1':
+                                extract = page_data.get('extract', '')
+                                if extract:
+                                    # Get first paragraph
+                                    paragraphs = extract.split('\n')
+                                    plot = paragraphs[0] if paragraphs else 'No description available.'
+                                    
+                                    return {
+                                        'success': True,
+                                        'title': page_data.get('title', movie_name),
+                                        'plot': plot[:500] + '...' if len(plot) > 500 else plot,
+                                        'year': 'N/A',
+                                        'rating': 'N/A',
+                                        'duration': 'N/A',
+                                        'genre': 'N/A',
+                                        'director': 'N/A',
+                                        'source': 'wikipedia'
+                                    }
+            
+            return {
+                'success': False,
+                'title': movie_name,
+                'message': 'Details not found. Try searching on @asfilter_bot'
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'title': movie_name,
+                'message': f'Error fetching details: {str(e)}'
+            }
 
 feature_manager = FeatureManager()
