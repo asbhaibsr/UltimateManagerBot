@@ -16,11 +16,11 @@ env:
   - name: MAIN_CHANNEL
     value: "@asbhai_bsr"
   - name: PORT
-    value: "8080"
+    value: "8000"
   
 build:
   command: "pip install -r requirements.txt"
   
 routes:
   - path: /
-    port: 8080
+    port: 8000
