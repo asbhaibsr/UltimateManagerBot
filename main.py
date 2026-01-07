@@ -1,6 +1,3 @@
-#  main.py
-
-
 import os
 import sys
 import asyncio
@@ -9,7 +6,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 
 from pyrogram import Client, filters, enums
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand
 from pyrogram.errors import (
     FloodWait, UserNotParticipant, ChatAdminRequired, 
     ChannelPrivate, UsernameNotOccupied, PeerIdInvalid
@@ -92,7 +89,7 @@ async def check_fsub(chat_id: int, user_id: int) -> Dict:
         
         # Check if bot is admin in channel
         try:
-            bot_member = await bot.get_chat_member(channel_id, Config.BOT_USERNAME)
+            bot_member = await bot.get_chat_member(channel_id, (await bot.get_me()).username)
             if bot_member.status not in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]:
                 return {"required": True, "joined": False, "error": "bot_not_admin"}
         except:
@@ -180,13 +177,17 @@ async def check_force_join(chat_id: int, user_id: int) -> Dict:
         
         # Check if user is already cleared
         waiting_user = await db.get_waiting_user(chat_id, user_id)
-        if not waiting_user:
+        if waiting_user is None:
             # Add user to waiting list
-            username = (await bot.get_users(user_id)).username or ""
+            try:
+                user_info = await bot.get_users(user_id)
+                username = user_info.username or ""
+            except:
+                username = ""
             await db.add_user_to_waiting(chat_id, user_id, username)
-            waiting_user = {"invited_count": 0}
-        
-        invited_count = waiting_user.get("invited_count", 0)
+            invited_count = 0
+        else:
+            invited_count = waiting_user.get("invited_count", 0)
         
         return {
             "required": True,
@@ -220,12 +221,29 @@ async def enforce_force_join(message: Message) -> bool:
 
 ✅ <b>Your Invites:</b> {current}/{required}
 
-Click "Invite Members" to get your invite link, then ask friends to join.
-After they join, click "Check Invites"."""
+1. Click "Get Invite Link" to get your personal link
+2. Share with friends
+3. After they join, click "Check Invites" to verify"""
+            
+            try:
+                # Get group invite link
+                chat = await bot.get_chat(chat_id)
+                invite_link = chat.invite_link
+                if not invite_link:
+                    # Create new invite link
+                    invite = await bot.create_chat_invite_link(
+                        chat_id=chat_id,
+                        name=f"Invite for user {user_id}",
+                        creates_join_request=False
+                    )
+                    invite_link = invite.invite_link
+            except:
+                invite_link = f"https://t.me/{message.chat.username}" if message.chat.username else "No link available"
             
             await message.reply_text(
                 warn_msg,
-                reply_markup=buttons.force_join_buttons(chat_id, required, current)
+                reply_markup=buttons.force_join_buttons(chat_id, required, current, invite_link),
+                disable_web_page_preview=True
             )
             return False
         
@@ -250,7 +268,7 @@ async def start_command(client: Client, message: Message):
 I'm an advanced movie information bot with powerful features:
 
 ✨ <b>Features:</b>
-• 🎬 Movie/Search details
+• 🎬 Movie details & search
 • 🔤 Spelling correction
 • 👥 Force Subscribe
 • 💎 Premium system
@@ -264,6 +282,7 @@ Use me in groups to get movie information instantly!
 • /settings - Bot settings (admins only)
 • /stats - View statistics
 • /premium - Premium information
+• /request <movie> - Request a movie
 
 <b>Add me to your group:</b>"""
             
@@ -280,6 +299,7 @@ I'm ready to provide movie information and more.
 
 <b>Group Commands:</b>
 • /movie <name> - Get movie details
+• /request <movie> - Request a movie
 • /settings - Bot settings (admins only)
 • /stats - Group statistics
 • /premium - Premium information
@@ -354,11 +374,11 @@ Example: /fsub @MovieProChannel"""
         
         # Check if bot is admin in channel
         try:
-            bot_member = await bot.get_chat_member(channel_info["id"], Config.BOT_USERNAME)
+            bot_member = await bot.get_chat_member(channel_info["id"], (await bot.get_me()).username)
             if bot_member.status not in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]:
                 await message.reply_text(
                     f"❌ Please make me admin in @{channel_info.get('username')} first.\n\n"
-                    f"1. Add @{Config.BOT_USERNAME} to your channel\n"
+                    f"1. Add @{(await bot.get_me()).username} to your channel\n"
                     f"2. Give me 'Post Messages' permission\n"
                     f"3. Try again"
                 )
@@ -366,7 +386,7 @@ Example: /fsub @MovieProChannel"""
         except Exception as e:
             await message.reply_text(
                 f"❌ Cannot access channel. Please:\n"
-                f"1. Add @{Config.BOT_USERNAME} to @{channel_info.get('username', 'your_channel')}\n"
+                f"1. Add @{(await bot.get_me()).username} to @{channel_info.get('username', 'your_channel')}\n"
                 f"2. Make me admin\n"
                 f"3. Try again"
             )
@@ -527,6 +547,171 @@ async def movie_command(client: Client, message: Message):
         except:
             pass
 
+async def request_command(client: Client, message: Message):
+    """Handle /request command"""
+    try:
+        chat_id = message.chat.id
+        user_id = message.from_user.id
+        
+        # Check FSUB
+        fsub_passed = await enforce_fsub(message)
+        if not fsub_passed:
+            return
+        
+        # Check Force Join
+        force_passed = await enforce_force_join(message)
+        if not force_passed:
+            return
+        
+        if len(message.command) < 2:
+            await message.reply_text(
+                "❌ Please provide a movie name.\n"
+                "Example: `/request Inception 2010`",
+                parse_mode=enums.ParseMode.MARKDOWN
+            )
+            return
+        
+        movie_name = " ".join(message.command[1:])
+        clean_name = await feature_manager.clean_movie_request(movie_name)
+        
+        # Add request to database
+        request_id = await db.add_request(chat_id, user_id, clean_name)
+        
+        # Get admins
+        try:
+            admins = []
+            async for admin in bot.get_chat_members(chat_id, filter=enums.ChatMembersFilter.ADMINISTRATORS):
+                if not admin.user.is_bot and admin.user.id != user_id:
+                    admins.append(admin.user)
+            
+            # Create mention string for admins
+            admin_mentions = " ".join([f"[{admin.first_name}](tg://user?id={admin.id})" for admin in admins[:3]])
+            
+            request_text = f"""🎬 <b>NEW MOVIE REQUEST</b>
+
+📝 <b>Movie:</b> <code>{clean_name}</code>
+👤 <b>Requested by:</b> <a href='tg://user?id={user_id}'>{message.from_user.first_name}</a>
+🕒 <b>Time:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+📋 <b>Request ID:</b> <code>{request_id}</code>
+
+{admin_mentions} Please fulfill this request! ✅"""
+            
+            # Send message with emoji buttons
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("✅ Fulfilled", callback_data=f"fulfilled_{request_id}"),
+                    InlineKeyboardButton("❌ Not Available", callback_data=f"not_avail_{request_id}")
+                ],
+                [
+                    InlineKeyboardButton("⏳ Working On It", callback_data=f"working_{request_id}")
+                ]
+            ])
+            
+            await message.reply_text(
+                request_text,
+                reply_markup=keyboard,
+                disable_web_page_preview=True
+            )
+            
+            # Auto-delete original message
+            await asyncio.sleep(5)
+            await message.delete()
+            
+        except Exception as e:
+            logger.error(f"Request command error: {e}")
+            await message.reply_text("✅ Your request has been logged. Admins will be notified.")
+    
+    except Exception as e:
+        logger.error(f"Request command error: {e}")
+        await message.reply_text("❌ Error processing request.")
+
+async def settings_command(client: Client, message: Message):
+    """Handle /settings command"""
+    try:
+        chat_id = message.chat.id
+        user_id = message.from_user.id
+        
+        # Check admin
+        if not await is_admin(chat_id, user_id):
+            await message.reply_text("❌ Only admins can use this command.")
+            return
+        
+        group_settings = await db.get_group_settings(chat_id)
+        
+        settings_text = f"""⚙️ <b>Bot Settings for {message.chat.title}</b>
+
+<b>Current Settings:</b>
+• 🔤 Spelling Check: {'✅ ON' if group_settings.get('features', {}).get('spell_check', True) else '❌ OFF'}
+• 📺 Season Check: {'✅ ON' if group_settings.get('features', {}).get('season_check', True) else '❌ OFF'}
+• 🗑️ Auto Delete: {'✅ ON' if group_settings.get('features', {}).get('auto_delete', True) else '❌ OFF'}
+• 📁 File Cleaner: {'✅ ON' if group_settings.get('features', {}).get('file_cleaner', True) else '❌ OFF'}
+• 🎬 Request System: {'✅ ON' if group_settings.get('features', {}).get('request_system', True) else '❌ OFF'}
+
+<b>Auto Delete Time:</b> {group_settings.get('auto_delete_time', 60)} seconds
+<b>File Clean Time:</b> {group_settings.get('file_clean_time', 300)} seconds
+
+Click buttons below to configure:"""
+        
+        await message.reply_text(
+            settings_text,
+            reply_markup=buttons.features_menu(chat_id, True)
+        )
+    
+    except Exception as e:
+        logger.error(f"Settings command error: {e}")
+
+async def premium_command(client: Client, message: Message):
+    """Handle /premium command"""
+    try:
+        chat_id = message.chat.id
+        user_id = message.from_user.id
+        
+        if message.chat.type == enums.ChatType.PRIVATE:
+            await message.reply_text(
+                premium_ui.main_premium_text(),
+                reply_markup=premium_ui.premium_buttons(),
+                disable_web_page_preview=True
+            )
+        else:
+            # Check premium status for group
+            premium_info = await db.get_premium_info(chat_id)
+            
+            if premium_info.get("is_premium"):
+                expiry = premium_info.get("expiry")
+                if expiry:
+                    expiry_str = expiry.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    expiry_str = "N/A"
+                    
+                status_text = f"""💎 <b>Premium Status for {message.chat.title}</b>
+
+✅ <b>Status:</b> ACTIVE
+📅 <b>Expiry:</b> {expiry_str}
+✨ <b>Features:</b> No Ads • Fast Speed • Priority Support
+
+Thank you for choosing Movie Bot Pro! 🎬"""
+            else:
+                status_text = f"""💎 <b>Premium Status for {message.chat.title}</b>
+
+❌ <b>Status:</b> NOT ACTIVE
+
+Upgrade to Premium for:
+✅ No Ads
+✅ Faster Responses
+✅ Priority Support
+✅ All Features Unlocked
+
+Click below for pricing:"""
+            
+            await message.reply_text(
+                status_text,
+                reply_markup=premium_ui.premium_buttons(),
+                disable_web_page_preview=True
+            )
+    
+    except Exception as e:
+        logger.error(f"Premium command error: {e}")
+
 async def handle_movie_request(client: Client, message: Message):
     """Handle movie name in text messages"""
     try:
@@ -548,17 +733,8 @@ async def handle_movie_request(client: Client, message: Message):
         if not force_passed:
             return
         
-        # Check if it looks like a movie request
-        movie_keywords = ['movie', 'film', 'series', 'season', 'download', 'de do', 'chahiye']
-        text_lower = text.lower()
-        
-        if not any(keyword in text_lower for keyword in movie_keywords):
-            return
-        
-        # Extract and clean movie name
-        clean_name, year = await feature_manager.extract_movie_name(text)
-        
-        if not clean_name or len(clean_name) < 2:
+        # Check if it looks like a movie request (minimum 3 characters)
+        if len(text) < 3:
             return
         
         # Get group settings
@@ -566,17 +742,19 @@ async def handle_movie_request(client: Client, message: Message):
         
         # Spell check
         if group_settings.get("features", {}).get("spell_check", True):
-            spell_check = await feature_manager.check_spelling_correction(clean_name)
-            if spell_check.get("needs_correction"):
-                await message.reply_text(
-                    f"🤔 <b>Did you mean:</b> <code>{spell_check.get('suggested')}</code>?\n"
-                    f"<i>Original:</i> <code>{spell_check.get('original')}</code>",
-                    reply_markup=buttons.spell_check_buttons(
-                        spell_check.get('original'),
-                        spell_check.get('suggested')
+            clean_name, year = await feature_manager.extract_movie_name(text)
+            if clean_name and len(clean_name) > 2:
+                spell_check = await feature_manager.check_spelling_correction(clean_name)
+                if spell_check.get("needs_correction"):
+                    await message.reply_text(
+                        f"🤔 <b>Did you mean:</b> <code>{spell_check.get('suggested')}</code>?\n"
+                        f"<i>Original:</i> <code>{spell_check.get('original')}</code>",
+                        reply_markup=buttons.spell_check_buttons(
+                            spell_check.get('original'),
+                            spell_check.get('suggested')
+                        )
                     )
-                )
-                return
+                    return
         
         # Season check
         if group_settings.get("features", {}).get("season_check", True):
@@ -590,53 +768,96 @@ async def handle_movie_request(client: Client, message: Message):
                 )
                 return
         
-        # Search for movie
-        search_msg = await message.reply_text(f"🔍 <b>Searching for:</b> <code>{clean_name}</code>")
+        # Check if text contains movie keywords
+        movie_keywords = ['movie', 'film', 'series', 'season', 'download', 'de do', 'chahiye', 'do', 'bhejo']
+        text_lower = text.lower()
         
-        # Search multiple results
-        search_results = await feature_manager.search_movies(clean_name)
+        has_keyword = any(keyword in text_lower for keyword in movie_keywords)
         
-        if not search_results:
-            await search_msg.edit_text(
-                f"❌ <b>No movies found!</b>\n\n"
-                f"<b>Searched:</b> <code>{clean_name}</code>\n\n"
-                f"<i>Suggestions:</i>\n"
-                f"• Check spelling\n"
-                f"• Add year (e.g., Inception 2010)\n"
-                f"• Try different name"
-            )
-            return
-        
-        # Save search results
-        search_id = await db.save_search_results(clean_name, search_results)
-        
-        # Show search results with buttons
-        result_text = f"🔍 <b>Search Results for:</b> <code>{clean_name}</code>\n\n"
-        result_text += f"📄 <b>Found {len(search_results)} results:</b>\n"
-        
-        for i, movie in enumerate(search_results[:5], 1):
-            title = movie.get('title', 'Unknown')
-            year = movie.get('year', 'N/A')
-            result_text += f"{i}. <b>{title}</b> ({year})\n"
-        
-        if len(search_results) > 5:
-            result_text += f"\n... and {len(search_results) - 5} more"
-        
-        result_text += "\n\n<b>Click on a movie for details:</b>"
-        
-        await search_msg.edit_text(
-            result_text,
-            reply_markup=buttons.movie_search_buttons(search_id, search_results)
-        )
-        
-        # Auto-delete if enabled
-        if group_settings.get("features", {}).get("auto_delete", True):
-            delay = group_settings.get("auto_delete_time", 60)
-            asyncio.create_task(delete_message(message, delay))
-            asyncio.create_task(delete_message(search_msg, delay + 2))
+        # If it's a simple movie name (no keywords), search directly
+        if not has_keyword and len(text.split()) <= 5:
+            clean_name, year = await feature_manager.extract_movie_name(text)
+            
+            if clean_name and len(clean_name) > 1:
+                # Search for movie
+                search_msg = await message.reply_text(f"🔍 <b>Searching for:</b> <code>{clean_name}</code>")
+                
+                # Search multiple results
+                search_results = await feature_manager.search_movies(clean_name)
+                
+                if not search_results:
+                    await search_msg.edit_text(
+                        f"❌ <b>No movies found!</b>\n\n"
+                        f"<b>Searched:</b> <code>{clean_name}</code>\n\n"
+                        f"<i>Suggestions:</i>\n"
+                        f"• Check spelling\n"
+                        f"• Add year (e.g., Inception 2010)\n"
+                        f"• Try different name"
+                    )
+                    return
+                
+                # Save search results
+                search_id = await db.save_search_results(clean_name, search_results)
+                
+                # Show search results with buttons
+                result_text = f"🔍 <b>Search Results for:</b> <code>{clean_name}</code>\n\n"
+                result_text += f"📄 <b>Found {len(search_results)} results:</b>\n"
+                
+                for i, movie in enumerate(search_results[:5], 1):
+                    title = movie.get('title', 'Unknown')
+                    year = movie.get('year', 'N/A')
+                    result_text += f"{i}. <b>{title}</b> ({year})\n"
+                
+                if len(search_results) > 5:
+                    result_text += f"\n... and {len(search_results) - 5} more"
+                
+                result_text += "\n\n<b>Click on a movie for details:</b>"
+                
+                await search_msg.edit_text(
+                    result_text,
+                    reply_markup=buttons.movie_search_buttons(search_id, search_results)
+                )
+                
+                # Auto-delete if enabled
+                if group_settings.get("features", {}).get("auto_delete", True):
+                    delay = group_settings.get("auto_delete_time", 60)
+                    asyncio.create_task(delete_message(message, delay))
+                    asyncio.create_task(delete_message(search_msg, delay + 2))
     
     except Exception as e:
         logger.error(f"Movie request handler error: {e}")
+
+async def handle_files(client: Client, message: Message):
+    """Handle files and clean them if needed"""
+    try:
+        chat_id = message.chat.id
+        user_id = message.from_user.id
+        
+        # Skip if user is admin
+        if await is_admin(chat_id, user_id):
+            return
+        
+        # Check if file cleaner is enabled
+        group_settings = await db.get_group_settings(chat_id)
+        if not group_settings.get("features", {}).get("file_cleaner", True):
+            return
+        
+        # Check file type
+        if message.document or message.video or message.audio:
+            file_info = await feature_manager.extract_file_info(message)
+            if file_info:
+                # Wait for configured time
+                clean_time = group_settings.get("file_clean_time", 300)  # Default 5 minutes
+                await asyncio.sleep(clean_time)
+                
+                try:
+                    await message.delete()
+                    logger.info(f"Deleted file from {user_id} in {chat_id}")
+                except Exception as e:
+                    logger.error(f"Failed to delete file: {e}")
+    
+    except Exception as e:
+        logger.error(f"File handler error: {e}")
 
 async def handle_callback(client: Client, callback_query: CallbackQuery):
     """Handle all callback queries"""
@@ -847,11 +1068,67 @@ async def handle_callback(client: Client, callback_query: CallbackQuery):
             await callback_query.answer("Force join cancelled", show_alert=True)
             await callback_query.message.delete()
         
+        elif data.startswith("fulfilled_") or data.startswith("not_avail_") or data.startswith("working_"):
+            parts = data.split("_")
+            status = parts[0]
+            request_id = "_".join(parts[1:])
+            
+            # Update request status
+            await db.db.requests.update_one(
+                {"request_id": request_id},
+                {"$set": {
+                    "status": status,
+                    "completed_at": datetime.now(),
+                    "completed_by": callback_query.from_user.id
+                }}
+            )
+            
+            # Get request details
+            request = await db.db.requests.find_one({"request_id": request_id})
+            if request:
+                requester_id = request.get("user_id")
+                movie_name = request.get("movie_name")
+                
+                status_text = {
+                    "fulfilled": "✅ Fulfilled",
+                    "not_avail": "❌ Not Available",
+                    "working": "⏳ Working On It"
+                }.get(status, "Updated")
+                
+                # Notify requester if possible
+                try:
+                    await bot.send_message(
+                        requester_id,
+                        f"📢 <b>Request Update</b>\n\n"
+                        f"🎬 <b>Movie:</b> {movie_name}\n"
+                        f"📊 <b>Status:</b> {status_text}\n"
+                        f"👤 <b>Updated by:</b> {callback_query.from_user.first_name}",
+                        disable_web_page_preview=True
+                    )
+                except:
+                    pass
+            
+            await callback_query.answer(f"Status updated to {status}")
+            await callback_query.message.edit_text(
+                f"✅ <b>Request Updated!</b>\n\n"
+                f"Status: {status_text}\n"
+                f"Updated by: {callback_query.from_user.first_name}",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Close", callback_data="close")]])
+            )
+        
         elif data == "show_premium":
             await callback_query.message.edit_text(
                 premium_ui.main_premium_text(),
                 reply_markup=premium_ui.premium_buttons(),
                 disable_web_page_preview=True
+            )
+        
+        elif data == "request_movie":
+            await callback_query.message.edit_text(
+                "🎬 <b>Request a Movie</b>\n\n"
+                "Send me the movie name you want to request.\n"
+                "Example: `Inception 2010` or `Avengers Endgame`",
+                parse_mode=enums.ParseMode.MARKDOWN
             )
         
         elif data == "close" or data == "close_search" or data == "close_details":
@@ -995,8 +1272,12 @@ async def main():
         bot.add_handler(MessageHandler(fsub_command, filters.command(["fsub"])))
         bot.add_handler(MessageHandler(force_join_command, filters.command(["forcejoin"])))
         bot.add_handler(MessageHandler(movie_command, filters.command(["movie"])))
+        bot.add_handler(MessageHandler(request_command, filters.command(["request"])))
+        bot.add_handler(MessageHandler(settings_command, filters.command(["settings"])))
+        bot.add_handler(MessageHandler(premium_command, filters.command(["premium"])))
         bot.add_handler(MessageHandler(stats_command, filters.command(["stats"])))
         bot.add_handler(MessageHandler(handle_movie_request, filters.text & filters.group))
+        bot.add_handler(MessageHandler(handle_files, filters.document | filters.video | filters.audio))
         bot.add_handler(MessageHandler(handle_new_member, filters.new_chat_members))
         bot.add_handler(CallbackQueryHandler(handle_callback))
         
@@ -1010,13 +1291,14 @@ async def main():
         
         # Set bot commands
         await bot.set_bot_commands([
-            ("start", "Start the bot"),
-            ("movie", "Get movie details"),
-            ("fsub", "Setup force subscribe (admin)"),
-            ("forcejoin", "Setup force join (admin)"),
-            ("settings", "Bot settings (admin)"),
-            ("stats", "View statistics"),
-            ("premium", "Premium information")
+            BotCommand("start", "Start the bot"),
+            BotCommand("movie", "Get movie details"),
+            BotCommand("request", "Request a movie"),
+            BotCommand("fsub", "Setup force subscribe (admin)"),
+            BotCommand("forcejoin", "Setup force join (admin)"),
+            BotCommand("settings", "Bot settings (admin)"),
+            BotCommand("stats", "View statistics"),
+            BotCommand("premium", "Premium information")
         ])
         
         logger.info("✅ Bot commands set")
@@ -1033,7 +1315,7 @@ async def main():
         traceback.print_exc()
     finally:
         try:
-            if bot and await bot.is_connected:
+            if bot and await bot.is_connected():
                 await bot.stop()
                 logger.info("✅ Bot stopped successfully")
         except Exception as e:
