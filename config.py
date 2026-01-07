@@ -22,7 +22,7 @@ class Config:
     LOG_CHANNEL = int(os.getenv("LOG_CHANNEL", 0))
     
     # Port for Koyeb/Heroku
-    PORT = int(os.getenv("PORT", 8080))
+    PORT = int(os.getenv("PORT", 8000))
     
     # Feature Defaults
     FEATURE_DEFAULTS = {
