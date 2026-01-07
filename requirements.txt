@@ -9,4 +9,4 @@ motor==3.3.2
 python-dotenv==1.0.0
 fuzzywuzzy==0.18.0
 python-Levenshtein==0.21.1
-cinemagoer==2022.7.9
+cinemagoer
