@@ -1,3 +1,5 @@
+# main.py
+
 import os
 import sys
 import asyncio
@@ -735,26 +737,122 @@ Click below for pricing:"""
     except Exception as e:
         logger.error(f"Premium command error: {e}")
 
+# ========== UPDATED HANDLERS AS PER YOUR REQUEST ==========
+
+async def handle_new_member(client: Client, message: Message):
+    """Handle new members joining - LOG CHANNEL FIX"""
+    try:
+        chat_id = message.chat.id
+        if message.new_chat_members:
+            for member in message.new_chat_members:
+                if member.id == (await client.get_me()).id:
+                    # Bot added to new group
+                    title = message.chat.title
+                    username = f"@{message.chat.username}" if message.chat.username else "Private Group"
+                    
+                    # Create Log Message
+                    log_text = f"#NewGroup\n\n<b>Bot added to a new group!</b>\n" \
+                               f"<b>Title:</b> {title}\n" \
+                               f"<b>ID:</b> <code>{chat_id}</code>\n" \
+                               f"<b>Link:</b> {username}"
+                    
+                    await client.send_message(Config.LOG_CHANNEL, log_text)
+                    
+                    # Also update database
+                    await db.update_group_settings(chat_id, {"title": message.chat.title})
+                    
+                    welcome_text = f"""✅ <b>Movie Bot Pro added to {message.chat.title}!</b>
+
+Thank you for adding me! Here's what I can do:
+
+🎬 <b>Movie Information:</b> Just type movie names
+🔤 <b>Spelling Correction:</b> Auto-corrects movie names
+👥 <b>Force Subscribe:</b> Control who can use the bot
+💎 <b>Premium Features:</b> Remove ads, faster responses
+
+<b>Admin Commands:</b>
+• /settings - Configure bot
+• /fsub - Setup force subscribe
+• /forcejoin - Setup force join
+
+<b>Enjoy using Movie Bot Pro! 🎥</b>"""
+                    
+                    await message.reply_text(welcome_text)
+                    return
+                
+                # Check if this user was invited by someone
+                if message.from_user and message.from_user.id != member.id:
+                    # This is an invite
+                    inviter_id = message.from_user.id
+                    invited_id = member.id
+                    
+                    # Update invited count
+                    count = await db.update_invited_count(chat_id, inviter_id, invited_id)
+                    
+                    # Check force join requirements
+                    group = await db.get_group_settings(chat_id)
+                    required = group.get("force_join_count", 0)
+                    
+                    if required > 0 and count >= required:
+                        # User has completed requirements
+                        welcome_msg = f"""✅ <b>Welcome {member.first_name}!</b>
+
+Thanks for joining! Your friend has completed their invitation requirements.
+
+Enjoy using the bot! 🎬"""
+                        
+                        await message.reply_text(welcome_msg)
+    
+    except Exception as e:
+        logger.error(f"New member handler error: {e}")
+
 async def handle_movie_request(client: Client, message: Message):
-    """Handle movie name in text messages"""
+    """Handle movie name in text messages - UPDATED FSUB & FORCE JOIN LOGIC"""
     try:
         chat_id = message.chat.id
         user_id = message.from_user.id
         text = message.text.strip()
         
-        # Ignore commands
-        if text.startswith('/'):
+        # Ignore commands or if not from user
+        if not message.from_user or text.startswith('/'):
             return
         
-        # Check FSUB
-        fsub_passed = await enforce_fsub(message)
-        if not fsub_passed:
-            return
+        # 1. Check FSUB - UPDATE: Message delete karo agar join nahi hai
+        fsub = await db.get_fsub_channel(chat_id)
+        if fsub.get("enabled"):
+            try:
+                await client.get_chat_member(fsub['channel_id'], user_id)
+            except UserNotParticipant:
+                await message.delete() # Message delete karo
+                return await message.reply_text(
+                    f"❌ <b>Access Denied!</b>\n\nPahle hamara channel join karein tabhi aap yahan message kar payenge.",
+                    reply_markup=buttons.fsub_channel_button(fsub['channel'])
+                )
+
+        # 2. Check Force Join (Invites) - UPDATE: Message delete karo agar invites nahi hain
+        group_settings = await db.get_group_settings(chat_id)
+        if group_settings.get("force_join_enabled"):
+            invites = await db.get_invited_count(chat_id, user_id)
+            required = group_settings.get("force_join_count", 0)
+            
+            if invites < required:
+                await message.delete() # Message delete karo
+                return await message.reply_text(
+                    f"⚠️ <b>Invite Needed!</b>\n\nAapko is group mein {required} bande add karne honge. \nAbhi aapne {invites} add kiye hain.",
+                    reply_markup=buttons.close_button()
+                )
+
+        # 3. Movie Search Validation - UPDATE: Smart search validation
+        query = message.text
+        is_correct, suggestion = await feature_manager.validate_and_suggest(query)
         
-        # Check Force Join
-        force_passed = await enforce_force_join(message)
-        if not force_passed:
-            return
+        if not is_correct and suggestion:
+            return await message.reply_text(
+                f"❌ <b>Galat Naam!</b>\n\nAapne '{query}' likha hai, kya aapka matlab <b>{suggestion}</b> tha?",
+                reply_markup=buttons.spell_check_buttons(query, suggestion)
+            )
+        elif not suggestion:
+            return # Agar movie hi nahi mili toh bot shant rahega
         
         # Check if it looks like a movie request (minimum 3 characters)
         if len(text) < 3:
@@ -883,7 +981,7 @@ async def handle_files(client: Client, message: Message):
         logger.error(f"File handler error: {e}")
 
 async def handle_callback(client: Client, callback_query: CallbackQuery):
-    """Handle all callback queries"""
+    """Handle all callback queries - UPDATED TIME SET FIX"""
     try:
         chat_id = callback_query.message.chat.id
         user_id = callback_query.from_user.id
@@ -952,20 +1050,14 @@ async def handle_callback(client: Client, callback_query: CallbackQuery):
             )
         
         elif data.startswith("set_time_"):
+            # Format: set_time_auto_delete_300 - UPDATED FIX
             parts = data.split("_")
-            if len(parts) >= 4:
-                feature_type = parts[2]
-                time_sec = int(parts[3])
-                
-                await db.update_group_settings(chat_id, {"auto_delete_time": time_sec})
-                
-                time_text = "Permanent" if time_sec == 0 else f"{time_sec} seconds"
-                await callback_query.answer(f"Auto delete time set to {time_text}")
-                
-                is_admin_user = await is_admin(chat_id, user_id) if chat_id != user_id else False
-                await callback_query.message.edit_reply_markup(
-                    buttons.features_menu(chat_id, is_admin_user)
-                )
+            time_sec = int(parts[-1])
+            await db.update_group_settings(chat_id, {"auto_delete_time": time_sec})
+            await callback_query.answer(f"✅ Delete time {time_sec}s par set ho gaya!", show_alert=True)
+            # Refresh menu
+            is_admin_user = await is_admin(chat_id, user_id) if chat_id != user_id else False
+            await callback_query.message.edit_reply_markup(reply_markup=buttons.features_menu(chat_id, is_admin_user))
         
         elif data.startswith("use_corrected_"):
             corrected = data.replace("use_corrected_", "")
@@ -1166,60 +1258,20 @@ async def handle_callback(client: Client, callback_query: CallbackQuery):
         except:
             pass
 
-async def handle_new_member(client: Client, message: Message):
-    """Handle new members joining"""
+# ========== NEW PREMIUM ADD COMMAND (OWNER ONLY) ==========
+@bot.on_message(filters.command("addprem") & filters.user(Config.OWNER_ID))
+async def add_premium_cmd(client, message):
     try:
-        chat_id = message.chat.id
+        if len(message.command) < 3:
+            return await message.reply_text("Usage: /addprem [chat_id] [months]")
         
-        for member in message.new_chat_members:
-            if member.id == client.me.id:
-                # Bot added to group
-                await db.update_group_settings(chat_id, {"title": message.chat.title})
-                
-                welcome_text = f"""✅ <b>Movie Bot Pro added to {message.chat.title}!</b>
-
-Thank you for adding me! Here's what I can do:
-
-🎬 <b>Movie Information:</b> Just type movie names
-🔤 <b>Spelling Correction:</b> Auto-corrects movie names
-👥 <b>Force Subscribe:</b> Control who can use the bot
-💎 <b>Premium Features:</b> Remove ads, faster responses
-
-<b>Admin Commands:</b>
-• /settings - Configure bot
-• /fsub - Setup force subscribe
-• /forcejoin - Setup force join
-
-<b>Enjoy using Movie Bot Pro! 🎥</b>"""
-                
-                await message.reply_text(welcome_text)
-                return
-            
-            # Check if this user was invited by someone
-            if message.from_user and message.from_user.id != member.id:
-                # This is an invite
-                inviter_id = message.from_user.id
-                invited_id = member.id
-                
-                # Update invited count
-                count = await db.update_invited_count(chat_id, inviter_id, invited_id)
-                
-                # Check force join requirements
-                group = await db.get_group_settings(chat_id)
-                required = group.get("force_join_count", 0)
-                
-                if required > 0 and count >= required:
-                    # User has completed requirements
-                    welcome_msg = f"""✅ <b>Welcome {member.first_name}!</b>
-
-Thanks for joining! Your friend has completed their invitation requirements.
-
-Enjoy using the bot! 🎬"""
-                    
-                    await message.reply_text(welcome_msg)
-    
+        target_chat = int(message.command[1])
+        months = int(message.command[2])
+        expiry = await db.set_premium(target_chat, months)
+        await message.reply_text(f"✅ Group {target_chat} ko {months} mahine ke liye Premium de diya gaya hai.\nExpiry: {expiry}")
+        await client.send_message(target_chat, "🎉 Mubarak ho! Ye group ab <b>PREMIUM</b> ho gaya hai.")
     except Exception as e:
-        logger.error(f"New member handler error: {e}")
+        await message.reply_text(f"Error: {e}")
 
 async def stats_command(client: Client, message: Message):
     """Show statistics"""
