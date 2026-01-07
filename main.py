@@ -3,7 +3,6 @@ import os
 import sys
 import asyncio
 import logging
-import signal
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 
@@ -27,19 +26,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize bot
-bot = Client(
-    "MovieBotPro",
-    api_id=Config.API_ID,
-    api_hash=Config.API_HASH,
-    bot_token=Config.BOT_TOKEN,
-    workers=20,
-    sleep_threshold=60,
-    in_memory=True
-)
-
-# Global variable to control bot running
-running = True
+# Global bot instance
+bot = None
 
 # ========== HELPER FUNCTIONS ==========
 async def is_admin(chat_id: int, user_id: int) -> bool:
@@ -986,24 +974,26 @@ async def stats_command(client: Client, message: Message):
     except Exception as e:
         logger.error(f"Stats command error: {e}")
 
-# ========== SIGNAL HANDLERS ==========
-def signal_handler(signum, frame):
-    """Handle shutdown signals"""
-    global running
-    logger.info(f"Received signal {signum}, shutting down...")
-    running = False
-
 # ========== MAIN FUNCTION ==========
 async def main():
     """Main function"""
-    # Register signal handlers
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    global bot
     
     try:
         # Initialize database
         await db.init_db()
         logger.info("✅ Database initialized")
+        
+        # Create bot instance
+        bot = Client(
+            "MovieBotPro",
+            api_id=Config.API_ID,
+            api_hash=Config.API_HASH,
+            bot_token=Config.BOT_TOKEN,
+            workers=20,
+            sleep_threshold=60,
+            plugins=dict(root="plugins")
+        )
         
         # Start bot
         logger.info("✅ Starting Movie Bot Pro...")
@@ -1028,8 +1018,7 @@ async def main():
         logger.info("✅ Bot is running...")
         
         # Keep bot running
-        while running:
-            await asyncio.sleep(1)
+        await idle()
         
         logger.info("🛑 Shutting down bot...")
         
@@ -1037,10 +1026,19 @@ async def main():
         logger.error(f"❌ Main error: {e}")
     finally:
         try:
-            await bot.stop()
-            logger.info("✅ Bot stopped successfully")
+            if bot and await bot.is_connected:
+                await bot.stop()
+                logger.info("✅ Bot stopped successfully")
         except Exception as e:
             logger.error(f"❌ Error stopping bot: {e}")
+
+async def idle():
+    """Idle function to keep bot running"""
+    try:
+        while True:
+            await asyncio.sleep(1)
+    except (KeyboardInterrupt, SystemExit):
+        pass
 
 if __name__ == "__main__":
     try:
