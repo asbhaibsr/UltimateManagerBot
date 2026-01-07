@@ -1,5 +1,3 @@
-# buttons.py
-
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import Config
 from premium_menu import premium_ui
@@ -36,7 +34,7 @@ class ButtonManager:
         if chat_id and is_admin:
             buttons.extend([
                 [
-                    InlineKeyboardButton("👥 Force Subscribe", callback_data="feature_fsub"),
+                    InlineKeyboardButton("📢 Force Subscribe", callback_data="feature_fsub"),
                     InlineKeyboardButton("✅ ON/OFF", callback_data="toggle_fsub")
                 ],
                 [
@@ -101,14 +99,10 @@ class ButtonManager:
     def spell_check_buttons(original: str, corrected: str) -> InlineKeyboardMarkup:
         buttons = [
             [
-                InlineKeyboardButton(f"✅ {corrected}", 
+                InlineKeyboardButton(f"✅ {corrected[:20]}", 
                  callback_data=f"use_corrected_{corrected}"),
-                InlineKeyboardButton(f"❌ Keep {original}", 
+                InlineKeyboardButton(f"❌ Keep Original", 
                  callback_data="keep_original")
-            ],
-            [
-                InlineKeyboardButton("🇮🇳 Hindi", callback_data=f"lang_hi_{corrected}"),
-                InlineKeyboardButton("🇬🇧 English", callback_data=f"lang_en_{corrected}")
             ]
         ]
         return InlineKeyboardMarkup(buttons)
@@ -160,10 +154,9 @@ class ButtonManager:
         ])
     
     @staticmethod
-    def force_join_buttons(chat_id: int, required_count: int, current_count: int):
+    def force_join_buttons(chat_id: int, required_count: int, current_count: int, invite_link: str):
         return InlineKeyboardMarkup([
-            [InlineKeyboardButton("👥 Invite Members", 
-             url=f"https://t.me/share/url?url=join%20{chat_id}")],
+            [InlineKeyboardButton("🔗 Get Invite Link", url=invite_link)],
             [InlineKeyboardButton(f"✅ Check Invites ({current_count}/{required_count})", 
              callback_data="check_invites")],
             [InlineKeyboardButton("❌ Cancel", callback_data="cancel_force_join")]
@@ -180,7 +173,6 @@ class ButtonManager:
         for i in range(start_idx, min(end_idx, len(results))):
             movie = results[i]
             title = movie.get('title', f"Movie {i+1}")
-            movie_id = movie.get('imdb_id', '')
             
             # Truncate long titles
             if len(title) > 30:
