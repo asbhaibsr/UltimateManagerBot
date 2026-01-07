@@ -12,6 +12,7 @@ from pyrogram.errors import (
     FloodWait, UserNotParticipant, ChatAdminRequired, 
     ChannelPrivate, UsernameNotOccupied, PeerIdInvalid
 )
+from pyrogram.handlers import MessageHandler, CallbackQueryHandler
 
 from config import Config
 from database import db
@@ -232,7 +233,6 @@ After they join, click "Check Invites"."""
         return True
 
 # ========== COMMAND HANDLERS ==========
-@bot.on_message(filters.command(["start", "help"]))
 async def start_command(client: Client, message: Message):
     """Handle /start command"""
     try:
@@ -295,7 +295,6 @@ I'm ready to provide movie information and more.
     except Exception as e:
         logger.error(f"Start command error: {e}")
 
-@bot.on_message(filters.command(["fsub"]))
 async def fsub_command(client: Client, message: Message):
     """Handle /fsub command"""
     try:
@@ -389,7 +388,6 @@ Example: /fsub @MovieProChannel"""
         logger.error(f"FSUB command error: {e}")
         await message.reply_text("❌ Error setting up Force Subscribe.")
 
-@bot.on_message(filters.command(["forcejoin"]))
 async def force_join_command(client: Client, message: Message):
     """Handle /forcejoin command"""
     try:
@@ -456,7 +454,6 @@ Example: /forcejoin 5 (users must invite 5 members)"""
         logger.error(f"Force join command error: {e}")
         await message.reply_text("❌ Error setting up Force Join.")
 
-@bot.on_message(filters.command(["movie"]))
 async def movie_command(client: Client, message: Message):
     """Handle /movie command"""
     try:
@@ -528,7 +525,6 @@ async def movie_command(client: Client, message: Message):
         except:
             pass
 
-@bot.on_message(filters.text & filters.group)
 async def handle_movie_request(client: Client, message: Message):
     """Handle movie name in text messages"""
     try:
@@ -640,7 +636,6 @@ async def handle_movie_request(client: Client, message: Message):
     except Exception as e:
         logger.error(f"Movie request handler error: {e}")
 
-@bot.on_callback_query()
 async def handle_callback(client: Client, callback_query: CallbackQuery):
     """Handle all callback queries"""
     try:
@@ -869,7 +864,6 @@ async def handle_callback(client: Client, callback_query: CallbackQuery):
         except:
             pass
 
-@bot.on_message(filters.new_chat_members)
 async def handle_new_member(client: Client, message: Message):
     """Handle new members joining"""
     try:
@@ -925,7 +919,6 @@ Enjoy using the bot! 🎬"""
     except Exception as e:
         logger.error(f"New member handler error: {e}")
 
-@bot.on_message(filters.command(["stats"]))
 async def stats_command(client: Client, message: Message):
     """Show statistics"""
     try:
@@ -995,6 +988,16 @@ async def main():
             plugins=dict(root="plugins")
         )
         
+        # Add handlers
+        bot.add_handler(MessageHandler(start_command, filters.command(["start", "help"])))
+        bot.add_handler(MessageHandler(fsub_command, filters.command(["fsub"])))
+        bot.add_handler(MessageHandler(force_join_command, filters.command(["forcejoin"])))
+        bot.add_handler(MessageHandler(movie_command, filters.command(["movie"])))
+        bot.add_handler(MessageHandler(stats_command, filters.command(["stats"])))
+        bot.add_handler(MessageHandler(handle_movie_request, filters.text & filters.group))
+        bot.add_handler(MessageHandler(handle_new_member, filters.new_chat_members))
+        bot.add_handler(CallbackQueryHandler(handle_callback))
+        
         # Start bot
         logger.info("✅ Starting Movie Bot Pro...")
         await bot.start()
@@ -1024,6 +1027,8 @@ async def main():
         
     except Exception as e:
         logger.error(f"❌ Main error: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         try:
             if bot and await bot.is_connected:
@@ -1048,3 +1053,5 @@ if __name__ == "__main__":
         logger.info("👋 Bot stopped by user")
     except Exception as e:
         logger.error(f"❌ Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
