@@ -1,3 +1,5 @@
+# buttons.py
+
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import Config
 from premium_menu import premium_ui
