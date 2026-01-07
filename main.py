@@ -4,6 +4,7 @@ import asyncio
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
+from aiohttp import web
 
 from pyrogram import Client, filters, enums
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand
@@ -28,6 +29,28 @@ logger = logging.getLogger(__name__)
 
 # Global bot instance
 bot = None
+
+# ========== HTTP SERVER FOR HEALTH CHECK ==========
+async def start_http_server():
+    """Start HTTP server for health checks"""
+    app = web.Application()
+    
+    async def handle_health(request):
+        return web.Response(text="Bot is running")
+    
+    async def handle_root(request):
+        return web.Response(text="Movie Bot Pro is online!")
+    
+    app.router.add_get('/', handle_root)
+    app.router.add_get('/health', handle_health)
+    
+    port = int(os.environ.get("PORT", 8000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    logger.info(f"✅ HTTP server started on port {port}")
+    return runner
 
 # ========== HELPER FUNCTIONS ==========
 async def is_admin(chat_id: int, user_id: int) -> bool:
@@ -1256,6 +1279,9 @@ async def main():
         await db.init_db()
         logger.info("✅ Database initialized")
         
+        # Start HTTP server for health checks
+        http_runner = await start_http_server()
+        
         # Create bot instance
         bot = Client(
             "MovieBotPro",
@@ -1318,6 +1344,9 @@ async def main():
             if bot and await bot.is_connected():
                 await bot.stop()
                 logger.info("✅ Bot stopped successfully")
+            if http_runner:
+                await http_runner.cleanup()
+                logger.info("✅ HTTP server stopped")
         except Exception as e:
             logger.error(f"❌ Error stopping bot: {e}")
 
