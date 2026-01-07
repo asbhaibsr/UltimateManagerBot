@@ -1,5 +1,3 @@
-# features.py
-
 import re
 import asyncio
 from typing import Tuple, Optional, Dict, List
@@ -12,6 +10,50 @@ class FeatureManager:
     def __init__(self):
         self.ia = Cinemagoer()
     
+    async def get_movie_details(self, movie_name: str) -> Dict:
+        try:
+            # Clean query
+            search_results = self.ia.search_movie(movie_name)
+            if not search_results:
+                return {'success': False, 'message': 'Movie nahi mili!'}
+            
+            movie = self.ia.get_movie(search_results[0].movieID)
+            title = movie.get('title', 'N/A')
+            year = movie.get('year', 'N/A')
+            rating = movie.get('rating', 'N/A')
+            plot = movie.get('plot outline') or (movie.get('plot')[0] if movie.get('plot') else 'No Plot')
+            
+            # IMDb Link construction
+            imdb_link = f"https://www.imdb.com/title/tt{movie.movieID}/"
+            
+            text = f"🎬 <b>{title} ({year})</b>\n\n" \
+                   f"⭐ <b>Rating:</b> {rating}/10\n" \
+                   f"🎭 <b>Genres:</b> {', '.join(movie.get('genres', []))}\n" \
+                   f"📖 <b>Plot:</b> {plot[:300]}...\n\n" \
+                   f"🔗 <a href='{imdb_link}'>View on IMDb</a>"
+            
+            return {
+                'success': True,
+                'title': title,
+                'poster': movie.get('full-size cover url'),
+                'text': text,
+                'imdb_id': movie.movieID
+            }
+        except Exception as e:
+            return {'success': False, 'message': str(e)}
+
+    async def validate_and_suggest(self, query: str):
+        """Check if name is correct, if not suggest from IMDb/Google"""
+        results = self.ia.search_movie(query)
+        if results:
+            best_match = results[0]['title']
+            # Agar 90% se zyada match hai toh sahi maano
+            if fuzz.ratio(query.lower(), best_match.lower()) > 85:
+                return True, best_match
+            else:
+                return False, best_match # Suggestion
+        return False, None
+
     # ========== MOVIE SEARCH AND DETAILS ==========
     async def get_poster(self, query, bulk=False, id=False, file=None):
         """Get movie poster and details from IMDb"""
@@ -125,66 +167,6 @@ class FeatureManager:
         except Exception as e:
             print(f"Search error: {e}")
             return []
-    
-    async def get_movie_details(self, movie_name: str) -> Dict:
-        """Get detailed movie information"""
-        try:
-            # Get movie details
-            movie_data = await self.get_poster(movie_name)
-            
-            if not movie_data:
-                return {
-                    'success': False,
-                    'title': movie_name,
-                    'message': 'Movie not found. Please try a different name.'
-                }
-            
-            # Format details text with proper Markdown
-            title = movie_data.get('title', movie_name)
-            year = movie_data.get('year', 'N/A')
-            rating = movie_data.get('rating', 'N/A')
-            genres = ", ".join(movie_data.get('genres', ['N/A']))
-            runtime = movie_data.get('runtimes', 'N/A')
-            plot = movie_data.get('plot', 'No description available.')
-            
-            cast = movie_data.get('cast', [])
-            directors = movie_data.get('directors', [])
-            
-            details_text = f"""<b>🎬 {title} ({year})</b>
-
-<b>⭐ Rating:</b> {rating}/10
-<b>🎭 Genres:</b> {genres}
-<b>⏳ Runtime:</b> {runtime}
-<b>🎬 Director:</b> {', '.join(directors) if directors else 'N/A'}
-<b>👥 Cast:</b> {', '.join(cast[:3]) if cast else 'N/A'}
-
-<b>📖 Plot:</b>
-{plot}
-
-<b>🔗 IMDb:</b> https://www.imdb.com/title/tt{movie_data.get('imdb_id')}/
-"""
-            
-            return {
-                'success': True,
-                'title': title,
-                'year': year,
-                'rating': rating,
-                'genre': genres,
-                'duration': runtime,
-                'director': ', '.join(directors) if directors else 'N/A',
-                'plot': plot,
-                'poster': movie_data.get('poster'),
-                'imdb_id': movie_data.get('imdb_id'),
-                'text': details_text,
-                'kind': movie_data.get('kind', 'movie')
-            }
-            
-        except Exception as e:
-            return {
-                'success': False,
-                'title': movie_name,
-                'message': f'Error fetching details: {str(e)}'
-            }
     
     # ========== SPELLING CORRECTION ==========
     async def check_spelling_correction(self, query: str) -> Dict:
