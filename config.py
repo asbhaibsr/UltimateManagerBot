@@ -1,5 +1,3 @@
-#  config.py
-
 import os
 from dotenv import load_dotenv
 
@@ -7,21 +5,21 @@ load_dotenv()
 
 class Config:
     # Bot Configuration
-    BOT_TOKEN = os.getenv("BOT_TOKEN", "your_bot_token_here")
-    API_ID = int(os.getenv("API_ID", 1234567))
-    API_HASH = os.getenv("API_HASH", "your_api_hash_here")
+    BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+    API_ID = int(os.getenv("API_ID", 0))
+    API_HASH = os.getenv("API_HASH", "")
     
     # Bot Info
-    BOT_USERNAME = os.getenv("BOT_USERNAME", "MovieMasterProBot")
-    OWNER_ID = int(os.getenv("OWNER_ID", 1234567890))
+    BOT_USERNAME = os.getenv("BOT_USERNAME", "MovieBotProBot")
+    OWNER_ID = int(os.getenv("OWNER_ID", 0))
     OWNER_USERNAME = os.getenv("OWNER_USERNAME", "asbhai_bsr")
     
     # Database
-    MONGO_DB_URL = os.getenv("MONGO_DB_URL", "mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority")
+    MONGO_DB_URL = os.getenv("MONGO_DB_URL", "")
     
     # Channels
     MAIN_CHANNEL = os.getenv("MAIN_CHANNEL", "MovieProChannel")
-    LOG_CHANNEL = int(os.getenv("LOG_CHANNEL", -1001234567890))
+    LOG_CHANNEL = int(os.getenv("LOG_CHANNEL", 0))
     
     # Port for Koyeb/Heroku
     PORT = int(os.getenv("PORT", 8080))
