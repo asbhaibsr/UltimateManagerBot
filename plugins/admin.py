@@ -1,3 +1,5 @@
+#  plugins/admin.py
+
 import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
