@@ -5,10 +5,10 @@ from config import Config
 from datetime import datetime, timedelta
 import logging
 
-logger = logging.getLogger(__name__)  # NAME CORRECT KIYA HAI
+logger = logging.getLogger(__name__)
 
 class Database:
-    def __init__(self):  # INIT CORRECT KIYA HAI
+    def __init__(self):
         self.client = motor.motor_asyncio.AsyncIOMotorClient(Config.MONGO_DB_URL)
         self.db = self.client["MovieBotDB"]
         self.users = self.db.users
@@ -16,14 +16,6 @@ class Database:
         self.requests = self.db.requests
         self.premium = self.db.premium
         
-        # Create indexes
-        # Note: create_index async nahi hai, ensure_index use karna hoga
-        try:
-            loop = self.client.get_io_loop()
-            loop.run_until_complete(self.setup_indexes())
-        except:
-            pass
-    
     async def setup_indexes(self):
         """Create database indexes"""
         await self.users.create_index("id", unique=True)
