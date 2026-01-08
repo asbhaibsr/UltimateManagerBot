@@ -6,6 +6,7 @@ from config import Config
 from utils import web_server
 from aiohttp import web
 import logging
+from database import db  # ADDED THIS
 
 # Configure logging
 logging.basicConfig(
@@ -26,6 +27,11 @@ app = Client(
 
 async def start_services():
     logger.info("Starting Bot...")
+    
+    # Initialize database - ADDED THIS
+    await db.setup_indexes()
+    logger.info("Database initialized")
+    
     await app.start()
     
     # Get bot info
@@ -49,7 +55,8 @@ async def start_services():
             f"✅ **Bot Started Successfully!**\n\n"
             f"🤖 **Bot:** @{bot.username}\n"
             f"🆔 **ID:** `{bot.id}`\n"
-            f"⏰ **Time:** {asyncio.get_event_loop().time()}"
+            f"📊 **Database:** ✅ Connected\n"
+            f"⏰ **Start Time:** {asyncio.get_event_loop().time()}"
         )
     except:
         pass
