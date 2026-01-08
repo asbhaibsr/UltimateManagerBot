@@ -1,12 +1,19 @@
-#  utils.py
+# utils.py
 
 import re
 import asyncio
+import nest_asyncio
 from aiohttp import web
 from fuzzywuzzy import process
 from imdb import Cinemagoer
 import g4f
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Apply nest_asyncio to fix event loop issues
+nest_asyncio.apply()
 
 ia = Cinemagoer()
 
@@ -29,6 +36,9 @@ IGNORE_WORDS = [
 
 def clean_movie_query(text):
     """Clean movie query by removing unnecessary words"""
+    if not text:
+        return ""
+    
     text = text.lower()
     
     # Remove common request patterns
@@ -68,6 +78,9 @@ def clean_movie_query(text):
 def extract_movie_name(text):
     """Extract movie name from query"""
     cleaned = clean_movie_query(text)
+    
+    if not cleaned:
+        return ""
     
     # Check for season pattern (S01, S02, etc)
     season_match = re.search(r'(.+?)\s+s(\d+)\s*e(\d+)', cleaned, re.IGNORECASE) or \
@@ -113,7 +126,8 @@ def check_movie_spelling(query):
                     ai_corrected = correct_with_ai(movie_name)
                     if ai_corrected and ai_corrected != movie_name:
                         return ai_corrected, year, "ai_corrected"
-                except:
+                except Exception as ai_error:
+                    logger.error(f"AI correction error: {ai_error}")
                     pass
                 
                 return top_match, year, "suggest"
@@ -126,13 +140,14 @@ def check_movie_spelling(query):
         return None, None, "no_results"
         
     except Exception as e:
-        print(f"Spell check error: {e}")
+        logger.error(f"Spell check error: {e}")
         return None, None, "error"
 
-def correct_with_ai(query):
+async def correct_with_ai(query):
     """Correct movie name using AI (g4f)"""
     try:
-        response = g4f.ChatCompletion.create(
+        # Use async version to avoid event loop issues
+        response = await g4f.ChatCompletion.create_async(
             model=g4f.models.gpt_35_turbo,
             messages=[{
                 "role": "user", 
@@ -143,7 +158,7 @@ def correct_with_ai(query):
         if response and len(response.strip()) > 3:
             return response.strip()
     except Exception as e:
-        print(f"AI correction error: {e}")
+        logger.error(f"AI correction error: {e}")
     
     return None
 
@@ -156,17 +171,23 @@ def format_movie_info(movie_data):
     year = movie_data.get('year', 'N/A')
     rating = movie_data.get('rating', 'N/A')
     genres = ', '.join(movie_data.get('genres', []))
-    plot = movie_data.get('plot outline', 'No plot available.')
+    plot = movie_data.get('plot outline', movie_data.get('plot', ['No plot available.']))
+    
+    if isinstance(plot, list):
+        plot = plot[0] if plot else 'No plot available.'
     
     # Truncate plot
     if len(plot) > 300:
         plot = plot[:300] + "..."
+    
+    movie_id = getattr(movie_data, 'movieID', '')
+    imdb_url = f"https://www.imdb.com/title/tt{movie_id}" if movie_id else "https://www.imdb.com"
     
     info = f"""🎬 **{title}** ({year})
 ⭐ **Rating:** {rating}/10
 🎭 **Genres:** {genres}
 📖 **Plot:** {plot}
 
-🔗 **IMDb:** https://www.imdb.com/title/tt{movie_data.movieID}"""
+🔗 **IMDb:** {imdb_url}"""
     
     return info
