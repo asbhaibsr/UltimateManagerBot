@@ -1,4 +1,4 @@
-#  start.py
+# plugins/start.py
 
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
@@ -59,6 +59,7 @@ async def help_main(client, callback):
 /search [movie] - Search movie
 /moviedetails [movie] - Get movie details
 /request [movie] - Request a movie
+#request [movie] - Request a movie
 
 **⚙️ Group Commands:**
 /linkfsub [channel_id] - Setup force join
@@ -68,7 +69,6 @@ async def help_main(client, callback):
 **👤 User Commands:**
 /start - Start the bot
 /help - Show this help
-/font [text] - Convert text to stylish fonts
 
 **🔧 Setup Instructions:**
 1. Add bot to group
@@ -129,4 +129,36 @@ async def premium_info(client, callback):
 
 @Client.on_callback_query(filters.regex(r"^back_to_start$"))
 async def back_to_start(client, callback):
-    await start_command(client, callback.message)
+    user_id = callback.from_user.id
+    name = callback.from_user.first_name
+    
+    # Welcome message with buttons
+    welcome_text = f"""
+👋 **Hello {name}!**
+
+Welcome to **Movie Filter Bot** 🤖
+
+I can help you:
+✅ Find movie details
+✅ Correct movie spellings
+✅ Auto-filter movies in groups
+✅ Force join system
+✅ And much more!
+
+Add me to your group and make me admin to get started!
+    """
+    
+    buttons = [
+        [InlineKeyboardButton("➕ Add to Group", url=f"https://t.me/{Config.BOT_USERNAME}?startgroup=true")],
+        [
+            InlineKeyboardButton("📖 Help", callback_data="help_main"),
+            InlineKeyboardButton("🌟 Premium", callback_data="premium_info")
+        ],
+        [InlineKeyboardButton("📞 Contact", url="https://t.me/asbhaibsr")]
+    ]
+    
+    await callback.message.edit_text(
+        welcome_text,
+        reply_markup=InlineKeyboardMarkup(buttons),
+        disable_web_page_preview=True
+    )
