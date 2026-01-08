@@ -33,7 +33,7 @@ async def auto_delete_files(client, message):
     
     # Send warning message
     warning = await message.reply(
-        f"⚠️ **This file will be deleted in {delete_after} minutes.**\n\n"
+        f"⚠️ This file will be deleted in {delete_after} minutes.\n\n"
         f"To keep files longer, upgrade to Premium!",
         reply_markup=InlineKeyboardMarkup(buttons) if buttons else None
     )
@@ -92,8 +92,8 @@ async def auto_delete_command(client, message):
         
         await message.reply(
             f"⏰ **Auto Delete Settings**\n\n"
-            f"Status: {current_status}\n"
-            f"Delete after: {current_time} minutes\n\n"
+            f"**Status:** {current_status}\n"
+            f"**Delete after:** {current_time} minutes\n\n"
             f"**Usage:**\n"
             f"`/autodelete on` - Enable auto delete\n"
             f"`/autodelete off` - Disable auto delete\n"
