@@ -1,4 +1,4 @@
-# main.py
+#  main.py
 
 import os
 import sys
@@ -29,15 +29,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Bot instance - TOP LEVEL PAR DEFINE KAREN
+# Bot instance - TOP LEVEL PAR DEFINE KAREN (PLUGINS HATA DIYE)
 bot = Client(
     "MovieBotPro",
     api_id=Config.API_ID,
     api_hash=Config.API_HASH,
     bot_token=Config.BOT_TOKEN,
-    workers=20,
-    sleep_threshold=60,
-    plugins=dict(root="plugins")
+    workers=40, # Workers badha diye fast response ke liye
+    sleep_threshold=60
+    # plugins=dict(root="plugins") <- Is line ko hata diya
 )
 
 # ========== HTTP SERVER FOR HEALTH CHECK ==========
@@ -863,144 +863,45 @@ Enjoy using the bot! 🎬"""
         logger.error(f"New member handler error: {e}")
 
 async def handle_movie_request(client: Client, message: Message):
-    """Handle movie name in text messages - UPDATED FSUB & FORCE JOIN LOGIC"""
+    """Handle movie name in text messages - ONLY VALIDATION (FIXED VERSION)"""
     try:
         chat_id = message.chat.id
         user_id = message.from_user.id
-        text = message.text.strip()
         
-        # Ignore commands or if not from user
-        if not message.from_user or text.startswith('/'):
+        # 1. Basic Filters
+        if not message.from_user or not message.text or message.text.startswith('/'):
             return
         
-        # 1. Check FSUB - UPDATE: Message delete karo agar join nahi hai
+        text = message.text.strip()
+        if len(text) < 3: # Chote text ignore karein
+            return
+
+        # 2. Check FSUB
         fsub = await db.get_fsub_channel(chat_id)
         if fsub.get("enabled"):
             try:
                 await client.get_chat_member(fsub['channel_id'], user_id)
             except UserNotParticipant:
-                await message.delete() # Message delete karo
-                return await message.reply_text(
-                    f"❌ <b>Access Denied!</b>\n\nPahle hamara channel join karein tabhi aap yahan message kar payenge.",
-                    reply_markup=buttons.fsub_channel_button(fsub['channel'])
-                )
+                # Sirf warn karein, message delete na karein agar user baat kar raha hai
+                return 
 
-        # 2. Check Force Join (Invites) - UPDATE: Message delete karo agar invites nahi hain
-        group_settings = await db.get_group_settings(chat_id)
-        if group_settings.get("force_join_enabled"):
-            invites = await db.get_invited_count(chat_id, user_id)
-            required = group_settings.get("force_join_count", 0)
-            
-            if invites < required:
-                await message.delete() # Message delete karo
-                return await message.reply_text(
-                    f"⚠️ <b>Invite Needed!</b>\n\nAapko is group mein {required} bande add karne honge. \nAbhi aapne {invites} add kiye hain.",
-                    reply_markup=buttons.close_button()
-                )
-
-        # 3. Movie Search Validation - UPDATE: Smart search validation
-        query = message.text
-        is_correct, suggestion = await feature_manager.validate_and_suggest(query)
+        # 3. Validation Logic (Search nahi karega, sirf check karega)
+        # Hum check karenge ki kya ye movie jaisa dikh raha hai
+        is_correct, suggestion = await feature_manager.validate_and_suggest(text)
         
-        if not is_correct and suggestion:
-            return await message.reply_text(
-                f"❌ <b>Galat Naam!</b>\n\nAapne '{query}' likha hai, kya aapka matlab <b>{suggestion}</b> tha?",
-                reply_markup=buttons.spell_check_buttons(query, suggestion)
-            )
-        elif not suggestion:
-            return # Agar movie hi nahi mili toh bot shant rahega
-        
-        # Check if it looks like a movie request (minimum 3 characters)
-        if len(text) < 3:
-            return
-        
-        # Get group settings
-        group_settings = await db.get_group_settings(chat_id)
-        
-        # Spell check
-        if group_settings.get("features", {}).get("spell_check", True):
-            clean_name, year = await feature_manager.extract_movie_name(text)
-            if clean_name and len(clean_name) > 2:
-                spell_check = await feature_manager.check_spelling_correction(clean_name)
-                if spell_check.get("needs_correction"):
-                    await message.reply_text(
-                        f"🤔 <b>Did you mean:</b> <code>{spell_check.get('suggested')}</code>?\n"
-                        f"<i>Original:</i> <code>{spell_check.get('original')}</code>",
-                        reply_markup=buttons.spell_check_buttons(
-                            spell_check.get('original'),
-                            spell_check.get('suggested')
-                        )
-                    )
-                    return
-        
-        # Season check
-        if group_settings.get("features", {}).get("season_check", True):
-            needs_season, suggested = await feature_manager.check_season_requirement(text)
-            if needs_season:
+        if suggestion:
+            # Agar naam thoda galat hai (85% se kam match)
+            if not is_correct:
                 await message.reply_text(
-                    f"📺 <b>Season Required!</b>\n\n"
-                    f"Your request looks like a series.\n"
-                    f"Please specify season number.\n\n"
-                    f"<b>Try:</b> <code>{suggested}</code>"
+                    f"🤔 **Kya aapka matlab ye hai?**\n\n🎬 `{suggestion}`\n\n"
+                    f"Sahi naam likhne se aapko jaldi results milenge!",
+                    reply_markup=buttons.spell_check_buttons(text, suggestion)
                 )
-                return
-        
-        # Check if text contains movie keywords
-        movie_keywords = ['movie', 'film', 'series', 'season', 'download', 'de do', 'chahiye', 'do', 'bhejo']
-        text_lower = text.lower()
-        
-        has_keyword = any(keyword in text_lower for keyword in movie_keywords)
-        
-        # If it's a simple movie name (no keywords), search directly
-        if not has_keyword and len(text.split()) <= 5:
-            clean_name, year = await feature_manager.extract_movie_name(text)
-            
-            if clean_name and len(clean_name) > 1:
-                # Search for movie
-                search_msg = await message.reply_text(f"🔍 <b>Searching for:</b> <code>{clean_name}</code>")
-                
-                # Search multiple results
-                search_results = await feature_manager.search_movies(clean_name)
-                
-                if not search_results:
-                    await search_msg.edit_text(
-                        f"❌ <b>No movies found!</b>\n\n"
-                        f"<b>Searched:</b> <code>{clean_name}</code>\n\n"
-                        f"<i>Suggestions:</i>\n"
-                        f"• Check spelling\n"
-                        f"• Add year (e.g., Inception 2010)\n"
-                        f"• Try different name"
-                    )
-                    return
-                
-                # Save search results
-                search_id = await db.save_search_results(clean_name, search_results)
-                
-                # Show search results with buttons
-                result_text = f"🔍 <b>Search Results for:</b> <code>{clean_name}</code>\n\n"
-                result_text += f"📄 <b>Found {len(search_results)} results:</b>\n"
-                
-                for i, movie in enumerate(search_results[:5], 1):
-                    title = movie.get('title', 'Unknown')
-                    year = movie.get('year', 'N/A')
-                    result_text += f"{i}. <b>{title}</b> ({year})\n"
-                
-                if len(search_results) > 5:
-                    result_text += f"\n... and {len(search_results) - 5} more"
-                
-                result_text += "\n\n<b>Click on a movie for details:</b>"
-                
-                await search_msg.edit_text(
-                    result_text,
-                    reply_markup=buttons.movie_search_buttons(search_id, search_results)
-                )
-                
-                # Auto-delete if enabled
-                if group_settings.get("features", {}).get("auto_delete", True):
-                    delay = group_settings.get("auto_delete_time", 60)
-                    asyncio.create_task(delete_message(message, delay))
-                    asyncio.create_task(delete_message(search_msg, delay + 2))
-    
+            # Agar naam 100% sahi hai, toh kuch mat karo (taaki group spam na ho)
+            else:
+                # Bot chup rahega jab tak koi command na de
+                pass
+
     except Exception as e:
         logger.error(f"Movie request handler error: {e}")
 
