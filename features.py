@@ -46,15 +46,26 @@ class FeatureManager:
 
     async def validate_and_suggest(self, query: str):
         """Check if name is correct, if not suggest from IMDb/Google"""
-        results = self.ia.search_movie(query)
-        if results:
-            best_match = results[0]['title']
-            # Agar 90% se zyada match hai toh sahi maano
-            if fuzz.ratio(query.lower(), best_match.lower()) > 85:
-                return True, best_match
-            else:
-                return False, best_match # Suggestion
-        return False, None
+        try:
+            # Loop se bachne ke liye common words check karein
+            common_chats = ['hi', 'hello', 'kaise', 'ok', 'bye', 'good', 'thanks', 'thank you']
+            if query.lower() in common_chats:
+                return True, None
+
+            # IMDb search sirf validation ke liye
+            search_results = self.ia.search_movie(query)
+            if search_results:
+                best_match = search_results[0]['title']
+                match_ratio = fuzz.ratio(query.lower(), best_match.lower())
+                
+                if match_ratio >= 90:
+                    return True, best_match # Bilkul sahi hai
+                else:
+                    return False, best_match # Spelling mistake hai
+            return False, None # Movie nahi mili
+        except Exception as e:
+            print(f"Validation error: {e}")
+            return True, None # Error hone par bhi continue karein
 
     # ========== MOVIE SEARCH AND DETAILS ==========
     async def get_poster(self, query, bulk=False, id=False, file=None):
