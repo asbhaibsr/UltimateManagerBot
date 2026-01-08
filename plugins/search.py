@@ -1,14 +1,14 @@
+# plugins/search.py
+
 import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from imdb import Cinemagoer
-from utils import format_movie_info, extract_movie_name
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
+from utils import get_movie_details, format_movie_info, extract_movie_name
 from database import db
-
-ia = Cinemagoer()
+from config import Config
 
 @Client.on_message(filters.command("search"))
-async def search_cmd(client, message):
+async def search_cmd(client, message: Message):
     """Search for movies"""
     if len(message.command) < 2:
         await message.reply("Please provide movie name!\nExample: `/search Avengers Endgame`")
@@ -17,101 +17,77 @@ async def search_cmd(client, message):
     query = " ".join(message.command[1:])
     movie_name = extract_movie_name(query)
     
+    if not movie_name:
+        await message.reply("Please enter a valid movie name!")
+        return
+    
     m = await message.reply(f"🔍 Searching for **{movie_name}**...")
     
     try:
-        results = ia.search_movie(movie_name)
-        if not results:
-            await m.edit("❌ No movie found with that name.")
-            return
+        # Get movie details
+        movie_data = await get_movie_details(movie_name)
         
-        # Get top 5 results
-        top_results = results[:5]
-        
-        text = f"🎬 **Search Results for:** `{movie_name}`\n\n"
-        buttons = []
-        
-        for idx, movie in enumerate(top_results, 1):
-            title = movie['title']
-            year = movie.get('year', 'N/A')
-            movie_id = movie.movieID
+        if not movie_data:
+            # If no movie found, show search link
+            search_url = f"{Config.SEARCH_BOT_URL}{movie_name.replace(' ', '+')}"
             
-            text += f"{idx}. **{title}** ({year})\n"
+            response_text = f"❌ **No movie found with that name.**\n\n"
+            response_text += f"🔍 **Try searching here:**\n"
+            response_text += f"👉 [Click to search '{movie_name}'](https://t.me/asfilter_bot?start={movie_name.replace(' ', '+')})\n\n"
+            response_text += f"💡 **Tips:**\n"
+            response_text += f"• Check spelling\n• Use correct year\n• Try full title"
             
-            buttons.append([
-                InlineKeyboardButton(
-                    f"{idx}. {title[:20]}...",
-                    callback_data=f"movie_details_{movie_id}"
-                )
-            ])
-        
-        buttons.append([
-            InlineKeyboardButton("🔍 Search More", url=f"https://www.imdb.com/find?q={movie_name}"),
-            InlineKeyboardButton("❌ Close", callback_data="close_msg")
-        ])
-        
-        await m.edit(
-            text,
-            reply_markup=InlineKeyboardMarkup(buttons),
-            disable_web_page_preview=True
-        )
-        
-    except Exception as e:
-        await m.edit(f"❌ Error: {str(e)}")
-
-@Client.on_message(filters.command("moviedetails"))
-async def movie_details_cmd(client, message):
-    """Get movie details"""
-    if len(message.command) < 2:
-        await message.reply("Please provide movie name!\nExample: `/moviedetails Avengers Endgame`")
-        return
-    
-    query = " ".join(message.command[1:])
-    movie_name = extract_movie_name(query)
-    
-    m = await message.reply(f"🔍 Getting details for **{movie_name}**...")
-    
-    try:
-        results = ia.search_movie(movie_name)
-        if not results:
-            await m.edit("❌ No movie found with that name.")
+            buttons = [
+                [InlineKeyboardButton("🔍 Search Here", url=f"https://t.me/asfilter_bot?start={movie_name.replace(' ', '+')}")],
+                [InlineKeyboardButton("🎬 Try Another", callback_data="search_again")]
+            ]
+            
+            await m.edit(
+                response_text,
+                reply_markup=InlineKeyboardMarkup(buttons),
+                disable_web_page_preview=False
+            )
             return
-        
-        movie = results[0]
-        ia.update(movie)
         
         # Format movie info
-        info = format_movie_info(movie)
-        photo = movie.get('full-size cover url')
+        info = format_movie_info(movie_data)
+        poster = movie_data.get("poster")
         
         # Create buttons
         buttons = [
             [
-                InlineKeyboardButton("📺 Trailer", url=f"https://www.youtube.com/results?search_query={movie['title']}+trailer"),
-                InlineKeyboardButton("⭐ IMDb", url=f"https://www.imdb.com/title/tt{movie.movieID}")
-            ],
-            [InlineKeyboardButton("🔍 Search Another", callback_data="search_another")]
+                InlineKeyboardButton("🎬 More Info", url=movie_data.get("imdb_url", "https://www.imdb.com")),
+                InlineKeyboardButton("🔍 Search Bot", url=f"https://t.me/asfilter_bot?start={movie_name.replace(' ', '+')}")
+            ]
         ]
         
-        if photo:
-            await message.reply_photo(
-                photo,
-                caption=info,
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
-            await m.delete()
+        if poster:
+            try:
+                await message.reply_photo(
+                    poster,
+                    caption=info,
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+                await m.delete()
+            except:
+                await m.edit(
+                    info,
+                    reply_markup=InlineKeyboardMarkup(buttons),
+                    disable_web_page_preview=False
+                )
         else:
             await m.edit(
                 info,
                 reply_markup=InlineKeyboardMarkup(buttons),
-                disable_web_page_preview=True
+                disable_web_page_preview=False
             )
         
         # Auto delete for groups
         if message.chat.type != "private":
             group = await db.get_group(message.chat.id)
             if group and group["settings"].get("auto_delete_files"):
-                await asyncio.sleep(300)  # 5 minutes
+                delete_after = group["settings"].get("delete_after_minutes", 5)
+                await asyncio.sleep(delete_after * 60)
                 try:
                     await m.delete()
                 except:
@@ -120,43 +96,103 @@ async def movie_details_cmd(client, message):
     except Exception as e:
         await m.edit(f"❌ Error: {str(e)}")
 
-@Client.on_callback_query(filters.regex(r"^movie_details_"))
-async def movie_details_callback(client, callback):
-    """Handle movie details from callback"""
-    movie_id = callback.data.split("_")[2]
+@Client.on_message(filters.command("moviedetails"))
+async def movie_details_cmd(client, message: Message):
+    """Get movie details"""
+    if len(message.command) < 2:
+        await message.reply("Please provide movie name!\nExample: `/moviedetails Avengers Endgame`")
+        return
+    
+    query = " ".join(message.command[1:])
+    movie_name = extract_movie_name(query)
+    
+    if not movie_name:
+        await message.reply("Please enter a valid movie name!")
+        return
+    
+    m = await message.reply(f"🔍 Getting details for **{movie_name}**...")
     
     try:
-        movie = ia.get_movie(movie_id)
-        info = format_movie_info(movie)
-        photo = movie.get('full-size cover url')
+        # Get movie details
+        movie_data = await get_movie_details(movie_name)
         
+        if not movie_data:
+            # If no movie found, show search link
+            search_url = f"{Config.SEARCH_BOT_URL}{movie_name.replace(' ', '+')}"
+            
+            response_text = f"❌ **No movie found with that name.**\n\n"
+            response_text += f"🔍 **Try searching here:**\n"
+            response_text += f"👉 [Click to search '{movie_name}'](https://t.me/asfilter_bot?start={movie_name.replace(' ', '+')})\n\n"
+            response_text += f"💡 **Tips:**\n"
+            response_text += f"• Check spelling\n• Use correct year\n• Try full title"
+            
+            buttons = [
+                [InlineKeyboardButton("🔍 Search Here", url=f"https://t.me/asfilter_bot?start={movie_name.replace(' ', '+')}")],
+                [InlineKeyboardButton("🎬 Try Another", callback_data="search_again")]
+            ]
+            
+            await m.edit(
+                response_text,
+                reply_markup=InlineKeyboardMarkup(buttons),
+                disable_web_page_preview=False
+            )
+            return
+        
+        # Format movie info
+        info = format_movie_info(movie_data)
+        poster = movie_data.get("poster")
+        
+        # Create buttons with your bot link
         buttons = [
             [
-                InlineKeyboardButton("📺 Trailer", url=f"https://www.youtube.com/results?search_query={movie['title']}+trailer"),
-                InlineKeyboardButton("⭐ IMDb", url=f"https://www.imdb.com/title/tt{movie.movieID}")
+                InlineKeyboardButton("🎬 More Info", url=movie_data.get("imdb_url", "https://www.imdb.com")),
+                InlineKeyboardButton("🔍 Search Bot", url=f"https://t.me/asfilter_bot?start={movie_name.replace(' ', '+')}")
             ],
-            [InlineKeyboardButton("🔙 Back", callback_data="back_to_search")]
+            [InlineKeyboardButton("🤖 Get This Movie", url=f"https://t.me/{Config.BOT_USERNAME}?start={movie_name.replace(' ', '+')}")]
         ]
         
-        if photo:
-            await callback.message.reply_photo(
-                photo,
-                caption=info,
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
+        if poster:
+            try:
+                await message.reply_photo(
+                    poster,
+                    caption=info,
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+                await m.delete()
+            except:
+                await m.edit(
+                    info,
+                    reply_markup=InlineKeyboardMarkup(buttons),
+                    disable_web_page_preview=False
+                )
         else:
-            await callback.message.reply(
+            await m.edit(
                 info,
-                reply_markup=InlineKeyboardMarkup(buttons)
+                reply_markup=InlineKeyboardMarkup(buttons),
+                disable_web_page_preview=False
             )
         
-        await callback.answer("Details sent!")
-        
+        # Auto delete for groups
+        if message.chat.type != "private":
+            group = await db.get_group(message.chat.id)
+            if group and group["settings"].get("auto_delete_files"):
+                delete_after = group["settings"].get("delete_after_minutes", 5)
+                await asyncio.sleep(delete_after * 60)
+                try:
+                    await m.delete()
+                except:
+                    pass
+                
     except Exception as e:
-        await callback.answer(f"Error: {str(e)}", show_alert=True)
+        await m.edit(f"❌ Error: {str(e)}")
 
-@Client.on_callback_query(filters.regex(r"^(close_msg|back_to_search|search_another)$"))
-async def close_message(client, callback):
-    """Close or go back"""
-    await callback.message.delete()
+@Client.on_callback_query(filters.regex(r"^search_again$"))
+async def search_again_callback(client, callback):
+    """Handle search again callback"""
+    await callback.message.edit_text(
+        "🔍 **Search Movies**\n\n"
+        "Type: `/search Movie Name`\n"
+        "Example: `/search Kill 2024`\n\n"
+        "Or use: `/moviedetails Movie Name` for details."
+    )
     await callback.answer()
