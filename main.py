@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from aiohttp import web
 
-from pyrogram import Client, filters, enums
+from pyrogram import Client, filters, enums, idle
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand
 from pyrogram.errors import (
     FloodWait, UserNotParticipant, ChatAdminRequired, 
@@ -29,8 +29,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global bot instance
-bot = None
+# Bot instance - TOP LEVEL PAR DEFINE KAREN
+bot = Client(
+    "MovieBotPro",
+    api_id=Config.API_ID,
+    api_hash=Config.API_HASH,
+    bot_token=Config.BOT_TOKEN,
+    workers=20,
+    sleep_threshold=60,
+    plugins=dict(root="plugins")
+)
 
 # ========== HTTP SERVER FOR HEALTH CHECK ==========
 async def start_http_server():
@@ -114,7 +122,7 @@ async def check_fsub(chat_id: int, user_id: int) -> Dict:
         
         # Check if bot is admin in channel
         try:
-            bot_member = await bot.get_chat_member(channel_id, (await bot.get_me()).username)
+            bot_member = await bot.get_chat_member(channel_id, (await bot.get_me()).id)
             if bot_member.status not in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]:
                 return {"required": True, "joined": False, "error": "bot_not_admin"}
         except:
@@ -399,7 +407,7 @@ Example: /fsub @MovieProChannel"""
         
         # Check if bot is admin in channel
         try:
-            bot_member = await bot.get_chat_member(channel_info["id"], (await bot.get_me()).username)
+            bot_member = await bot.get_chat_member(channel_info["id"], (await bot.get_me()).id)
             if bot_member.status not in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]:
                 await message.reply_text(
                     f"❌ Please make me admin in @{channel_info.get('username')} first.\n\n"
@@ -736,6 +744,54 @@ Click below for pricing:"""
     
     except Exception as e:
         logger.error(f"Premium command error: {e}")
+
+async def stats_command(client: Client, message: Message):
+    """Show statistics"""
+    try:
+        chat_id = message.chat.id
+        
+        if message.chat.type == enums.ChatType.PRIVATE:
+            # Bot stats
+            stats = await db.get_bot_stats()
+            premium_info = await db.get_premium_info(chat_id)
+            
+            stats_text = f"""📊 <b>Bot Statistics</b>
+
+👥 <b>Total Users:</b> {stats.get('total_users', 0)}
+👥 <b>Total Groups:</b> {stats.get('total_groups', 0)}
+💎 <b>Premium Groups:</b> {stats.get('premium_groups', 0)}
+🎬 <b>Total Requests:</b> {stats.get('total_requests', 0)}
+⏳ <b>Pending Requests:</b> {stats.get('pending_requests', 0)}
+📅 <b>Today's Requests:</b> {stats.get('today_requests', 0)}
+
+<b>Your Status:</b> {'💎 Premium' if premium_info.get('is_premium') else '🆓 Free'}"""
+            
+            await message.reply_text(stats_text)
+        else:
+            # Group stats
+            group_stats = await db.get_group_stats(chat_id)
+            premium_info = await db.get_premium_info(chat_id)
+            
+            # Get member count
+            try:
+                chat = await bot.get_chat(chat_id)
+                member_count = chat.members_count
+            except:
+                member_count = "N/A"
+            
+            stats_text = f"""📊 <b>Group Statistics</b>
+
+👥 <b>Members:</b> {member_count}
+🎬 <b>Total Requests:</b> {group_stats.get('total_requests', 0)}
+📅 <b>Today's Requests:</b> {group_stats.get('today_requests', 0)}
+💎 <b>Premium:</b> {'✅ Active' if premium_info.get('is_premium') else '❌ Not Active'}
+
+<b>Bot added on:</b> {group_stats.get('created').strftime('%Y-%m-%d') if group_stats.get('created') else 'N/A'}"""
+            
+            await message.reply_text(stats_text)
+    
+    except Exception as e:
+        logger.error(f"Stats command error: {e}")
 
 # ========== UPDATED HANDLERS AS PER YOUR REQUEST ==========
 
@@ -1273,59 +1329,9 @@ async def add_premium_cmd(client, message):
     except Exception as e:
         await message.reply_text(f"Error: {e}")
 
-async def stats_command(client: Client, message: Message):
-    """Show statistics"""
-    try:
-        chat_id = message.chat.id
-        
-        if message.chat.type == enums.ChatType.PRIVATE:
-            # Bot stats
-            stats = await db.get_bot_stats()
-            premium_info = await db.get_premium_info(chat_id)
-            
-            stats_text = f"""📊 <b>Bot Statistics</b>
-
-👥 <b>Total Users:</b> {stats.get('total_users', 0)}
-👥 <b>Total Groups:</b> {stats.get('total_groups', 0)}
-💎 <b>Premium Groups:</b> {stats.get('premium_groups', 0)}
-🎬 <b>Total Requests:</b> {stats.get('total_requests', 0)}
-⏳ <b>Pending Requests:</b> {stats.get('pending_requests', 0)}
-📅 <b>Today's Requests:</b> {stats.get('today_requests', 0)}
-
-<b>Your Status:</b> {'💎 Premium' if premium_info.get('is_premium') else '🆓 Free'}"""
-            
-            await message.reply_text(stats_text)
-        else:
-            # Group stats
-            group_stats = await db.get_group_stats(chat_id)
-            premium_info = await db.get_premium_info(chat_id)
-            
-            # Get member count
-            try:
-                chat = await client.get_chat(chat_id)
-                member_count = chat.members_count
-            except:
-                member_count = "N/A"
-            
-            stats_text = f"""📊 <b>Group Statistics</b>
-
-👥 <b>Members:</b> {member_count}
-🎬 <b>Total Requests:</b> {group_stats.get('total_requests', 0)}
-📅 <b>Today's Requests:</b> {group_stats.get('today_requests', 0)}
-💎 <b>Premium:</b> {'✅ Active' if premium_info.get('is_premium') else '❌ Not Active'}
-
-<b>Bot added on:</b> {group_stats.get('created').strftime('%Y-%m-%d') if group_stats.get('created') else 'N/A'}"""
-            
-            await message.reply_text(stats_text)
-    
-    except Exception as e:
-        logger.error(f"Stats command error: {e}")
-
 # ========== MAIN FUNCTION ==========
 async def main():
     """Main function"""
-    global bot
-    
     try:
         # Initialize database
         await db.init_db()
@@ -1333,17 +1339,6 @@ async def main():
         
         # Start HTTP server for health checks
         http_runner = await start_http_server()
-        
-        # Create bot instance
-        bot = Client(
-            "MovieBotPro",
-            api_id=Config.API_ID,
-            api_hash=Config.API_HASH,
-            bot_token=Config.BOT_TOKEN,
-            workers=20,
-            sleep_threshold=60,
-            plugins=dict(root="plugins")
-        )
         
         # Add handlers
         bot.add_handler(MessageHandler(start_command, filters.command(["start", "help"])))
@@ -1376,7 +1371,8 @@ async def main():
             BotCommand("forcejoin", "Setup force join (admin)"),
             BotCommand("settings", "Bot settings (admin)"),
             BotCommand("stats", "View statistics"),
-            BotCommand("premium", "Premium information")
+            BotCommand("premium", "Premium information"),
+            BotCommand("addprem", "Add premium (owner only)")
         ])
         
         logger.info("✅ Bot commands set")
@@ -1393,22 +1389,11 @@ async def main():
         traceback.print_exc()
     finally:
         try:
-            if bot and await bot.is_connected():
+            if await bot.is_connected():
                 await bot.stop()
                 logger.info("✅ Bot stopped successfully")
-            if http_runner:
-                await http_runner.cleanup()
-                logger.info("✅ HTTP server stopped")
         except Exception as e:
             logger.error(f"❌ Error stopping bot: {e}")
-
-async def idle():
-    """Idle function to keep bot running"""
-    try:
-        while True:
-            await asyncio.sleep(1)
-    except (KeyboardInterrupt, SystemExit):
-        pass
 
 if __name__ == "__main__":
     try:
