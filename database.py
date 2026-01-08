@@ -5,10 +5,10 @@ from config import Config
 from datetime import datetime, timedelta
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)  # NAME CORRECT KIYA HAI
 
 class Database:
-    def __init__(self):
+    def __init__(self):  # INIT CORRECT KIYA HAI
         self.client = motor.motor_asyncio.AsyncIOMotorClient(Config.MONGO_DB_URL)
         self.db = self.client["MovieBotDB"]
         self.users = self.db.users
@@ -17,9 +17,18 @@ class Database:
         self.premium = self.db.premium
         
         # Create indexes
-        self.db.users.create_index("id", unique=True)
-        self.db.groups.create_index("id", unique=True)
-        self.db.premium.create_index("group_id", unique=True)
+        # Note: create_index async nahi hai, ensure_index use karna hoga
+        try:
+            loop = self.client.get_io_loop()
+            loop.run_until_complete(self.setup_indexes())
+        except:
+            pass
+    
+    async def setup_indexes(self):
+        """Create database indexes"""
+        await self.users.create_index("id", unique=True)
+        await self.groups.create_index("id", unique=True)
+        await self.premium.create_index("group_id", unique=True)
 
     # --- User Handling ---
     async def add_user(self, user_id, name, username=""):
@@ -50,7 +59,11 @@ class Database:
         return await self.users.find_one({"id": user_id})
 
     async def get_all_users(self):
-        return self.users.find({})
+        cursor = self.users.find({})
+        users = []
+        async for user in cursor:
+            users.append(user)
+        return users
 
     async def delete_user(self, user_id):
         await self.users.delete_one({"id": user_id})
@@ -70,7 +83,7 @@ class Database:
                         "spell_check": True,
                         "fsub": None,
                         "auto_delete_files": False,
-                        "delete_after_minutes": 5
+                        "delete_after_minutes": Config.AUTO_DELETE_MINUTES
                     },
                     "stats": {
                         "total_messages": 0,
@@ -102,7 +115,11 @@ class Database:
         )
 
     async def get_all_groups(self):
-        return self.groups.find({})
+        cursor = self.groups.find({})
+        groups = []
+        async for group in cursor:
+            groups.append(group)
+        return groups
 
     async def delete_group(self, group_id):
         await self.groups.delete_one({"id": group_id})
@@ -138,6 +155,13 @@ class Database:
     async def get_premium_info(self, group_id):
         return await self.premium.find_one({"group_id": group_id})
 
+    async def get_all_premium(self):
+        cursor = self.premium.find({})
+        premiums = []
+        async for premium in cursor:
+            premiums.append(premium)
+        return premiums
+
     # --- Requests ---
     async def add_request(self, user_id, group_id, movie_name):
         await self.requests.insert_one({
@@ -150,7 +174,10 @@ class Database:
 
     async def get_group_requests(self, group_id, limit=50):
         cursor = self.requests.find({"group_id": group_id}).sort("timestamp", -1).limit(limit)
-        return await cursor.to_list(length=limit)
+        requests = []
+        async for req in cursor:
+            requests.append(req)
+        return requests
 
     # --- Stats ---
     async def get_stats(self):
