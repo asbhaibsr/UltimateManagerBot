@@ -2,11 +2,10 @@
 
 import re
 import asyncio
+import aiohttp
 import nest_asyncio
 from aiohttp import web
 from fuzzywuzzy import process
-from imdb import Cinemagoer
-import g4f
 from datetime import datetime
 import logging
 
@@ -14,8 +13,6 @@ logger = logging.getLogger(__name__)
 
 # Apply nest_asyncio to fix event loop issues
 nest_asyncio.apply()
-
-ia = Cinemagoer()
 
 # --- Koyeb Health Check Server ---
 async def web_server():
@@ -100,7 +97,7 @@ def extract_movie_name(text):
     
     return cleaned
 
-def check_movie_spelling(query):
+async def check_movie_spelling(query):
     """Check and correct movie spelling using multiple sources"""
     movie_name = extract_movie_name(query)
     
@@ -108,57 +105,162 @@ def check_movie_spelling(query):
         return None, None, None
     
     try:
-        # Try IMDb first
-        results = ia.search_movie(movie_name)
+        # Try TMDB API
+        corrected_name = await search_tmdb_movie(movie_name)
         
-        if results:
-            top_match = results[0]['title']
-            year = results[0].get('year', 'N/A')
-            
-            # Fuzzy match
-            ratio = process.extractOne(movie_name, [top_match])[1]
-            
-            if ratio >= 80:
-                return top_match, year, "correct"
-            else:
-                # Try AI correction
-                try:
-                    ai_corrected = correct_with_ai(movie_name)
-                    if ai_corrected and ai_corrected != movie_name:
-                        return ai_corrected, year, "ai_corrected"
-                except Exception as ai_error:
-                    logger.error(f"AI correction error: {ai_error}")
-                    pass
-                
-                return top_match, year, "suggest"
+        if corrected_name:
+            return corrected_name, "N/A", "correct"
         
-        # If IMDb fails, try AI
-        ai_result = correct_with_ai(movie_name)
-        if ai_result:
-            return ai_result, "N/A", "ai_suggest"
-            
-        return None, None, "no_results"
+        # Try OMDb API
+        corrected_name = await search_omdb_movie(movie_name)
+        
+        if corrected_name:
+            return corrected_name, "N/A", "correct"
+        
+        # If API fails, use simple fuzzy matching
+        return movie_name, "N/A", "suggest"
         
     except Exception as e:
         logger.error(f"Spell check error: {e}")
         return None, None, "error"
 
-async def correct_with_ai(query):
-    """Correct movie name using AI (g4f)"""
+async def search_tmdb_movie(query):
+    """Search movie using TMDB API"""
     try:
-        # Use async version to avoid event loop issues
-        response = await g4f.ChatCompletion.create_async(
-            model=g4f.models.gpt_35_turbo,
-            messages=[{
-                "role": "user", 
-                "content": f"What is the correct title for this movie/show: '{query}'? Return only the correct title."
-            }],
-            timeout=10
-        )
-        if response and len(response.strip()) > 3:
-            return response.strip()
+        url = f"https://api.themoviedb.org/3/search/movie"
+        params = {
+            "api_key": "e547e17d4e91f3e62a571655cd1ccaff",
+            "query": query,
+            "language": "en-US",
+            "page": 1
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data.get("results") and len(data["results"]) > 0:
+                        return data["results"][0]["title"]
     except Exception as e:
-        logger.error(f"AI correction error: {e}")
+        logger.error(f"TMDB search error: {e}")
+    
+    return None
+
+async def search_omdb_movie(query):
+    """Search movie using OMDb API"""
+    try:
+        url = f"http://www.omdbapi.com/"
+        params = {
+            "apikey": "6ed172d8",
+            "s": query,
+            "type": "movie"
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data.get("Search") and len(data["Search"]) > 0:
+                        return data["Search"][0]["Title"]
+    except Exception as e:
+        logger.error(f"OMDb search error: {e}")
+    
+    return None
+
+async def get_movie_details(movie_name):
+    """Get movie details from multiple APIs"""
+    try:
+        # Try OMDb first
+        details = await get_omdb_details(movie_name)
+        if details:
+            return details
+        
+        # Try TMDB
+        details = await get_tmdb_details(movie_name)
+        if details:
+            return details
+            
+        return None
+    except Exception as e:
+        logger.error(f"Movie details error: {e}")
+        return None
+
+async def get_omdb_details(movie_name):
+    """Get movie details from OMDb"""
+    try:
+        url = f"http://www.omdbapi.com/"
+        params = {
+            "apikey": "6ed172d8",
+            "t": movie_name,
+            "plot": "short"
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data.get("Response") == "True":
+                        return {
+                            "title": data.get("Title", "N/A"),
+                            "year": data.get("Year", "N/A"),
+                            "rating": data.get("imdbRating", "N/A"),
+                            "genre": data.get("Genre", "N/A"),
+                            "plot": data.get("Plot", "No plot available."),
+                            "poster": data.get("Poster"),
+                            "imdb_id": data.get("imdbID"),
+                            "imdb_url": f"https://www.imdb.com/title/{data.get('imdbID')}" if data.get("imdbID") else None
+                        }
+    except Exception as e:
+        logger.error(f"OMDb details error: {e}")
+    
+    return None
+
+async def get_tmdb_details(movie_name):
+    """Get movie details from TMDB"""
+    try:
+        # First search for movie
+        search_url = f"https://api.themoviedb.org/3/search/movie"
+        search_params = {
+            "api_key": "e547e17d4e91f3e62a571655cd1ccaff",
+            "query": movie_name,
+            "language": "en-US",
+            "page": 1
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(search_url, params=search_params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data.get("results") and len(data["results"]) > 0:
+                        movie_id = data["results"][0]["id"]
+                        
+                        # Get details
+                        details_url = f"https://api.themoviedb.org/3/movie/{movie_id}"
+                        details_params = {
+                            "api_key": "e547e17d4e91f3e62a571655cd1ccaff",
+                            "language": "en-US"
+                        }
+                        
+                        async with session.get(details_url, params=details_params) as details_response:
+                            if details_response.status == 200:
+                                details_data = await details_response.json()
+                                
+                                # Get poster
+                                poster_path = details_data.get("poster_path")
+                                poster_url = f"https://image.tmdb.org/t/p/w500{poster_path}" if poster_path else None
+                                
+                                return {
+                                    "title": details_data.get("title", "N/A"),
+                                    "year": details_data.get("release_date", "N/A")[:4] if details_data.get("release_date") else "N/A",
+                                    "rating": str(details_data.get("vote_average", "N/A")),
+                                    "genre": ", ".join([g["name"] for g in details_data.get("genres", [])]),
+                                    "plot": details_data.get("overview", "No plot available."),
+                                    "poster": poster_url,
+                                    "imdb_id": details_data.get("imdb_id"),
+                                    "imdb_url": f"https://www.imdb.com/title/{details_data.get('imdb_id')}" if details_data.get("imdb_id") else f"https://www.themoviedb.org/movie/{movie_id}"
+                                }
+    except Exception as e:
+        logger.error(f"TMDB details error: {e}")
     
     return None
 
@@ -170,24 +272,23 @@ def format_movie_info(movie_data):
     title = movie_data.get('title', 'N/A')
     year = movie_data.get('year', 'N/A')
     rating = movie_data.get('rating', 'N/A')
-    genres = ', '.join(movie_data.get('genres', []))
-    plot = movie_data.get('plot outline', movie_data.get('plot', ['No plot available.']))
-    
-    if isinstance(plot, list):
-        plot = plot[0] if plot else 'No plot available.'
+    genre = movie_data.get('genre', 'N/A')
+    plot = movie_data.get('plot', 'No plot available.')
     
     # Truncate plot
     if len(plot) > 300:
         plot = plot[:300] + "..."
     
-    movie_id = getattr(movie_data, 'movieID', '')
-    imdb_url = f"https://www.imdb.com/title/tt{movie_id}" if movie_id else "https://www.imdb.com"
+    imdb_url = movie_data.get('imdb_url', 'https://www.imdb.com/')
     
     info = f"""🎬 **{title}** ({year})
-⭐ **Rating:** {rating}/10
-🎭 **Genres:** {genres}
-📖 **Plot:** {plot}
 
-🔗 **IMDb:** {imdb_url}"""
+⭐ **Rating:** {rating}/10
+🎭 **Genres:** {genre}
+
+📖 **Plot:**
+{plot}
+
+🔗 **More Info:** {imdb_url}"""
     
     return info
