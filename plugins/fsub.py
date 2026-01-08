@@ -16,11 +16,12 @@ async def link_fsub_command(client, message):
     
     if len(message.command) < 3:
         await message.reply(
-            "Usage: `/linkfsub <group_id> <channel_id>`\n\n"
-            "Example: `/linkfsub -100123456789 -100987654321`\n\n"
-            "Note: Make sure:\n"
+            "**Usage:** `/linkfsub <group_id> <channel_id>`\n\n"
+            "**Example:** `/linkfsub -100123456789 -100987654321`\n\n"
+            "**Note:** Make sure:\n"
             "1. Bot is admin in both group and channel\n"
-            "2. Channel ID should start with -100"
+            "2. Channel ID should start with -100\n\n"
+            "To get Group ID: Add @userinfobot to your group and use /id"
         )
         return
     
@@ -40,7 +41,7 @@ async def link_fsub_command(client, message):
         
         # Check bot admin in channel
         try:
-            member = await client.get_chat_member(channel_id, "me")
+            member = await client.get_chat_member(channel_id, (await client.get_me()).id)
             if member.status != enums.ChatMemberStatus.ADMINISTRATOR:
                 await message.reply("❌ Bot is not admin in the channel!")
                 return
@@ -50,7 +51,7 @@ async def link_fsub_command(client, message):
         
         # Check bot admin in group
         try:
-            member = await client.get_chat_member(group_id, "me")
+            member = await client.get_chat_member(group_id, (await client.get_me()).id)
             if member.status != enums.ChatMemberStatus.ADMINISTRATOR:
                 await message.reply("❌ Bot is not admin in the group!")
                 return
@@ -67,8 +68,8 @@ async def link_fsub_command(client, message):
         await message.reply(
             f"✅ **Force Join Linked Successfully!**\n\n"
             f"📢 **Channel:** {channel.title}\n"
-            f"🆔 **Channel ID:** `{channel_id}`\n"
-            f"👥 **Group:** `{group_id}`\n\n"
+            f"🆔 **Channel ID:** {channel_id}\n"
+            f"👥 **Group:** {group_id}\n\n"
             f"Users will now need to join the channel to send messages."
         )
         
@@ -95,16 +96,24 @@ async def fsub_status(client, message):
         
         # Check bot admin status
         try:
-            member = await client.get_chat_member(channel_id, "me")
+            member = await client.get_chat_member(channel_id, (await client.get_me()).id)
             admin_status = "✅ Admin" if member.status == enums.ChatMemberStatus.ADMINISTRATOR else "❌ Not Admin"
         except:
             admin_status = "❌ Not Admin"
         
+        # Get invite link
+        try:
+            invite = await client.create_chat_invite_link(channel_id, member_limit=1)
+            invite_link = invite.invite_link
+        except:
+            invite_link = f"https://t.me/c/{str(channel_id)[4:]}"
+        
         await message.reply(
             f"📢 **Force Join Status**\n\n"
             f"**Channel:** {channel.title}\n"
-            f"**Channel ID:** `{channel_id}`\n"
-            f"**Bot Status:** {admin_status}\n\n"
+            f"**Channel ID:** {channel_id}\n"
+            f"**Bot Status:** {admin_status}\n"
+            f"**Join Link:** {invite_link}\n\n"
             f"Users must join this channel to send messages."
         )
     except Exception as e:
@@ -152,11 +161,19 @@ async def enforce_fsub(client, message):
         except:
             invite_link = f"https://t.me/c/{str(channel_id)[4:]}"
         
+        # Get channel info
+        try:
+            channel = await client.get_chat(channel_id)
+            channel_name = channel.title
+        except:
+            channel_name = "Our Channel"
+        
         # Send warning message
         warning = await message.reply(
             f"👋 {message.from_user.mention},\n\n"
             f"📢 **You must join our channel to send messages here!**\n\n"
-            f"👉 Join: {invite_link}\n\n"
+            f"**Channel:** {channel_name}\n"
+            f"👉 **Join:** {invite_link}\n\n"
             f"After joining, click **Unmute Me** below.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("✅ Join Channel", url=invite_link)],
