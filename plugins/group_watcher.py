@@ -1,4 +1,4 @@
-#  plugins/group_watcher.py 
+# plugins/group_watcher.py
 
 import asyncio
 import re
@@ -21,9 +21,9 @@ async def welcome_new_member(client, chat_member_updated):
         
         user = chat_member_updated.new_chat_member.user
         welcome_text = f"""
-👋 Welcome {user.mention} to **{chat_member_updated.chat.title}**!
+👋 Welcome {user.mention} to {chat_member_updated.chat.title}!
 
-🎬 This group uses **Movie Filter Bot** for:
+🎬 This group uses Movie Filter Bot for:
 • Movie spell check
 • Movie details
 • Force join system
@@ -41,7 +41,7 @@ Type /help for commands!
         except:
             pass
 
-@Client.on_message(filters.group & filters.text & ~filters.command(["start", "help", "connect"]))
+@Client.on_message(filters.group & filters.text & ~filters.command(["start", "help", "connect", "settings", "search", "moviedetails", "request", "autodelete", "linkfsub", "fsubstatus"]))
 async def group_text_handler(client, message):
     """Handle group messages for spell check"""
     if not message.text or len(message.text.strip()) < 3:
@@ -107,9 +107,9 @@ async def group_text_handler(client, message):
 ❌ **Possible Spelling Mistake!**
 
 👤 **User:** {message.from_user.mention}
-📝 **You typed:** `{message.text[:50]}...`
+📝 **You typed:** {message.text[:50]}...
 
-✅ **Did you mean:** **{correct_name}** ({year if year != 'N/A' else ''})
+✅ **Did you mean:** {correct_name} ({year if year != 'N/A' else ''})
 
 💡 **Tip:** Type only movie name without extra words like "send", "link", "dedo", etc.
             """
@@ -117,7 +117,7 @@ async def group_text_handler(client, message):
             sent = await message.reply(
                 suggestion_text,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔍 Search This", callback_data=f"search_{correct_name}")]
+                    [InlineKeyboardButton("🔍 Search This", callback_data=f"search_{correct_name.replace(' ', '_')}")]
                 ])
             )
             
@@ -135,13 +135,22 @@ async def request_handler(client, message):
     if not group:
         return
     
-    query = message.text.replace("/request", "").replace("#request", "").strip()
+    # Extract query
+    if message.text.startswith("/request"):
+        query = message.text.replace("/request", "").strip()
+    else:
+        query = message.text.replace("#request", "").strip()
+    
     if not query or len(query) < 2:
-        await message.reply("Please provide movie name!\nExample: `/request Avengers Endgame`")
+        await message.reply("Please provide movie name!\nExample: /request Avengers Endgame")
         return
     
     # Clean the query
     movie_name = extract_movie_name(query)
+    
+    if not movie_name:
+        await message.reply("Please enter a valid movie name!")
+        return
     
     # Save request to database
     await db.add_request(message.from_user.id, message.chat.id, movie_name)
@@ -150,7 +159,7 @@ async def request_handler(client, message):
     text = f"""
 📩 **New Movie Request!**
 
-🎬 **Movie:** `{movie_name}`
+🎬 **Movie:** {movie_name}
 👤 **Requested by:** {message.from_user.mention}
 👥 **Group:** {message.chat.title}
 
@@ -159,24 +168,25 @@ async def request_handler(client, message):
     
     # Tag owner if available
     owner_id = group.get("owner_id")
+    owner_mention = ""
     if owner_id:
         try:
             owner = await client.get_users(owner_id)
-            text += f"\n👑 **Group Owner:** {owner.mention}"
+            owner_mention = f"\n👑 **Group Owner:** {owner.mention}"
         except:
             pass
     
-    await message.reply(text)
+    await message.reply(text + owner_mention)
     
     # Notify owner in private
     try:
         if owner_id:
             await client.send_message(
                 owner_id,
-                f"📥 New movie request in {message.chat.title}\n"
-                f"🎬 Movie: {movie_name}\n"
-                f"👤 User: {message.from_user.mention}\n"
-                f"💬 Message: {message.link}"
+                f"📥 **New movie request in {message.chat.title}**\n\n"
+                f"🎬 **Movie:** {movie_name}\n"
+                f"👤 **User:** {message.from_user.mention}\n"
+                f"💬 **Message:** {message.link}"
             )
     except:
         pass
@@ -184,7 +194,7 @@ async def request_handler(client, message):
 @Client.on_callback_query(filters.regex(r"^search_"))
 async def search_callback(client, callback):
     """Handle search from callback"""
-    movie_name = callback.data.split("_", 1)[1]
+    movie_name = callback.data.split("_", 1)[1].replace('_', ' ')
     
     try:
         results = ia.search_movie(movie_name)
@@ -204,4 +214,4 @@ async def search_callback(client, callback):
         else:
             await callback.answer("No results found!", show_alert=True)
     except Exception as e:
-        await callback.answer("Error searching!", show_alert=True)
+        await callback.answer(f"Error searching: {str(e)}", show_alert=True)
