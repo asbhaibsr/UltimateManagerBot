@@ -1,5 +1,3 @@
-# database.py
-
 import motor.motor_asyncio
 from config import Config
 from datetime import datetime, timedelta
@@ -15,13 +13,19 @@ class Database:
         self.groups = self.db.groups
         self.requests = self.db.requests
         self.premium = self.db.premium
+        self.channels = self.db.channels
         
-    async def setup_indexes(self):
-        """Create database indexes"""
-        await self.users.create_index("id", unique=True)
-        await self.groups.create_index("id", unique=True)
-        await self.premium.create_index("group_id", unique=True)
-
+    async def init_db(self):
+        """Initialize database indexes"""
+        try:
+            await self.users.create_index("id", unique=True)
+            await self.groups.create_index("id", unique=True)
+            await self.premium.create_index("group_id", unique=True)
+            await self.channels.create_index("id", unique=True)
+            logger.info("Database indexes created successfully")
+        except Exception as e:
+            logger.error(f"Error creating indexes: {e}")
+    
     # --- User Handling ---
     async def add_user(self, user_id, name, username=""):
         try:
@@ -37,7 +41,6 @@ class Database:
                 logger.info(f"New user added: {user_id} - {name}")
                 return True
             else:
-                # Update last active
                 await self.users.update_one(
                     {"id": user_id},
                     {"$set": {"last_active": datetime.now()}}
@@ -52,10 +55,7 @@ class Database:
 
     async def get_all_users(self):
         cursor = self.users.find({})
-        users = []
-        async for user in cursor:
-            users.append(user)
-        return users
+        return cursor
 
     async def delete_user(self, user_id):
         await self.users.delete_one({"id": user_id})
@@ -108,10 +108,7 @@ class Database:
 
     async def get_all_groups(self):
         cursor = self.groups.find({})
-        groups = []
-        async for group in cursor:
-            groups.append(group)
-        return groups
+        return cursor
 
     async def delete_group(self, group_id):
         await self.groups.delete_one({"id": group_id})
@@ -131,7 +128,6 @@ class Database:
             upsert=True
         )
         
-        # Also update in groups collection
         await self.groups.update_one(
             {"id": group_id},
             {"$set": {"premium_expiry": expiry_date}}
@@ -149,10 +145,23 @@ class Database:
 
     async def get_all_premium(self):
         cursor = self.premium.find({})
-        premiums = []
-        async for premium in cursor:
-            premiums.append(premium)
-        return premiums
+        return cursor
+
+    # --- Channel Handling ---
+    async def add_channel(self, channel_id, title, linked_group):
+        await self.channels.update_one(
+            {"id": channel_id},
+            {"$set": {
+                "id": channel_id,
+                "title": title,
+                "linked_group": linked_group,
+                "added_date": datetime.now()
+            }},
+            upsert=True
+        )
+
+    async def get_channel(self, channel_id):
+        return await self.channels.find_one({"id": channel_id})
 
     # --- Requests ---
     async def add_request(self, user_id, group_id, movie_name):
@@ -166,10 +175,7 @@ class Database:
 
     async def get_group_requests(self, group_id, limit=50):
         cursor = self.requests.find({"group_id": group_id}).sort("timestamp", -1).limit(limit)
-        requests = []
-        async for req in cursor:
-            requests.append(req)
-        return requests
+        return cursor
 
     # --- Stats ---
     async def get_stats(self):
@@ -177,7 +183,6 @@ class Database:
         g_count = await self.groups.count_documents({})
         r_count = await self.requests.count_documents({})
         
-        # Active groups (last 7 days)
         week_ago = datetime.now() - timedelta(days=7)
         active_groups = await self.groups.count_documents({
             "stats.last_updated": {"$gte": week_ago}
