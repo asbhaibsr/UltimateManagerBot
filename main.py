@@ -1,12 +1,13 @@
-# main.py
-
-import asyncio
-from pyrogram import Client, idle
-from config import Config
-from utils import web_server
-from aiohttp import web
 import logging
-from database import db  # ADDED THIS
+from pyrogram import Client
+from aiohttp import web
+import asyncio
+from config import Config
+from database import db
+import nest_asyncio
+
+# Apply nest_asyncio to fix event loop issues
+nest_asyncio.apply()
 
 # Configure logging
 logging.basicConfig(
@@ -15,64 +16,56 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-plugins = dict(root="plugins")
-
+# Initialize bot
 app = Client(
     "MovieBot",
     api_id=Config.API_ID,
     api_hash=Config.API_HASH,
     bot_token=Config.BOT_TOKEN,
-    plugins=plugins
+    plugins=dict(root="plugins")
 )
 
-async def start_services():
-    logger.info("Starting Bot...")
-    
-    # Initialize database - ADDED THIS
-    await db.setup_indexes()
+# Web server for Koyeb health check
+async def web_server():
+    async def handle_home(request):
+        return web.Response(text="Bot is Running and Healthy!", status=200)
+
+    async def handle_health(request):
+        return web.json_response({"status": "ok", "bot": "running"})
+
+    server = web.Application()
+    server.add_routes([
+        web.get('/', handle_home),
+        web.get('/health', handle_health)
+    ])
+    return server
+
+async def main():
+    # Initialize database
+    await db.init_db()
     logger.info("Database initialized")
     
-    await app.start()
-    
-    # Get bot info
-    bot = await app.get_me()
-    logger.info(f"Bot Started: @{bot.username}")
-    
-    logger.info("Starting Web Server for Koyeb...")
+    # Start web server
     server = await web_server()
     runner = web.AppRunner(server)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', Config.PORT)
     await site.start()
-    logger.info(f"Server running on port {Config.PORT}")
+    logger.info(f"Web server started on port {Config.PORT}")
     
+    # Start bot
+    await app.start()
+    me = await app.get_me()
+    logger.info(f"Bot Started: @{me.username}")
     logger.info("Bot and Server Started Successfully!")
     
-    # Send startup message to log channel
-    try:
-        await app.send_message(
-            Config.LOG_CHANNEL,
-            f"✅ **Bot Started Successfully!**\n\n"
-            f"🤖 **Bot:** @{bot.username}\n"
-            f"🆔 **ID:** `{bot.id}`\n"
-            f"📊 **Database:** ✅ Connected\n"
-            f"⏰ **Start Time:** {asyncio.get_event_loop().time()}"
-        )
-    except:
-        pass
-    
-    await idle()
-    
-    logger.info("Stopping Bot...")
-    await app.stop()
+    # Keep running
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
     try:
-        loop.run_until_complete(start_services())
+        asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
-        logger.error(f"Error: {e}")
-    finally:
-        loop.close()
+        logger.error(f"Bot crashed: {e}")
