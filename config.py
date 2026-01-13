@@ -1,3 +1,5 @@
+# config.py
+
 import os
 from dotenv import load_dotenv
 
@@ -10,7 +12,7 @@ class Config:
     API_HASH = os.getenv("API_HASH", "")
     
     # Bot Info
-    BOT_USERNAME = os.getenv("BOT_USERNAME", "MovieBotProBot")
+    BOT_USERNAME = os.getenv("BOT_USERNAME", "MovieHelper_asBot")
     OWNER_ID = int(os.getenv("OWNER_ID", 7315805581))
     
     # Database
@@ -25,7 +27,6 @@ class Config:
     # Additional Config
     AUTO_DELETE_TIME = 500  # Seconds to auto-delete bot messages
     BROADCAST_DELAY = 1  # Seconds between broadcasts to avoid flood
-    CHANNEL_ID = -1002283182645  # Logs channel
     
     # Force Sub Channel
     FORCE_SUB_CHANNEL = os.getenv("FORCE_SUB_CHANNEL", "@asbhai_bsr")
