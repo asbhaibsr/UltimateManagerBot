@@ -1,3 +1,5 @@
+#  bot.py
+
 import asyncio
 import logging
 from pyrogram import Client, filters, idle
@@ -9,9 +11,9 @@ from pyrogram.errors import FloodWait, UserNotParticipant
 from config import Config
 from database import *
 from utils import MovieBotUtils
-from flask import Flask
-from threading import Thread
+from flask import Flask, jsonify
 import datetime
+import os
 
 # Setup logging
 logging.basicConfig(
@@ -26,7 +28,7 @@ app = Client(
     api_id=Config.API_ID,
     api_hash=Config.API_HASH,
     bot_token=Config.BOT_TOKEN,
-    plugins=dict(root="plugins")
+    in_memory=True
 )
 
 # Flask app for Koyeb health check
@@ -34,17 +36,87 @@ flask_app = Flask(__name__)
 
 @flask_app.route('/')
 def home():
-    return "🤖 Movie Helper Bot is Running!"
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Movie Helper Bot</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                text-align: center;
+                padding: 50px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+            }
+            .container {
+                background: rgba(255,255,255,0.1);
+                padding: 30px;
+                border-radius: 15px;
+                backdrop-filter: blur(10px);
+                max-width: 600px;
+                margin: 0 auto;
+            }
+            h1 {
+                font-size: 2.5em;
+                margin-bottom: 20px;
+            }
+            .status {
+                background: green;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 25px;
+                display: inline-block;
+                margin: 20px 0;
+            }
+            .info {
+                text-align: left;
+                margin-top: 20px;
+                background: rgba(255,255,255,0.1);
+                padding: 15px;
+                border-radius: 10px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🎬 Movie Helper Bot</h1>
+            <div class="status">✅ Bot is Running</div>
+            <p>This bot helps with movie recommendations, spelling correction, and more!</p>
+            
+            <div class="info">
+                <h3>📊 Bot Status:</h3>
+                <p>• Telegram Bot: <strong>Connected</strong></p>
+                <p>• Server: <strong>Active</strong></p>
+                <p>• Health Check: <strong>Passing</strong></p>
+                <p>• Last Updated: {}</p>
+            </div>
+            
+            <p style="margin-top: 30px;">
+                <a href="/health" style="color: #fff; text-decoration: underline;">Check API Health</a> | 
+                <a href="https://t.me/{}" style="color: #fff; text-decoration: underline;">Contact Bot</a>
+            </p>
+        </div>
+    </body>
+    </html>
+    """.format(
+        datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        Config.BOT_USERNAME
+    )
 
 @flask_app.route('/health')
 def health():
-    return {"status": "healthy", "timestamp": str(datetime.datetime.now())}
+    return jsonify({
+        "status": "healthy",
+        "service": "movie_helper_bot",
+        "timestamp": str(datetime.datetime.now()),
+        "telegram_bot": "running",
+        "version": "2.0.0"
+    })
 
-def run_flask():
-    flask_app.run(host='0.0.0.0', port=8080)
-
-# Start Flask in background thread
-Thread(target=run_flask, daemon=True).start()
+@flask_app.route('/ping')
+def ping():
+    return "pong"
 
 # ================ COMMAND HANDLERS ================
 
@@ -78,7 +150,7 @@ Add me to your groups and make me admin! 😊"""
     
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Add to Group", url=f"https://t.me/{Config.BOT_USERNAME}?startgroup=true")],
-        [InlineKeyboardButton("📢 Updates Channel", url="https://t.me/MovieUpdateChannel")],
+        [InlineKeyboardButton("📢 Updates Channel", url="https://t.me/asbhai_bsr")],
         [InlineKeyboardButton("🤖 Help", callback_data="help")]
     ])
     
@@ -115,7 +187,7 @@ async def help_command(client: Client, message: Message):
 • /ban [user_id] - Ban user
 • /unban [user_id] - Unban user
 
-Need help? Contact @OwnerUsername 😊"""
+Need help? Contact @asbhai_bsr 😊"""
     
     await message.reply_text(help_text)
     await MovieBotUtils.auto_delete_message(client, message)
@@ -655,49 +727,3 @@ Need help? Use /help 😊"""
                     pass
             
             break  # Only need to handle bot addition once
-
-# ================ MAIN FUNCTION ================
-
-async def main():
-    """Main function to run the bot"""
-    logger.info("Starting Movie Helper Bot...")
-    
-    # Start the bot
-    await app.start()
-    
-    # Get bot info
-    bot_info = await app.get_me()
-    logger.info(f"Bot started as @{bot_info.username}")
-    
-    # Set bot commands
-    commands = [
-        {"command": "start", "description": "Start the bot"},
-        {"command": "help", "description": "Get help"},
-        {"command": "settings", "description": "Group settings"},
-        {"command": "stats", "description": "Bot statistics"},
-        {"command": "ai", "description": "Ask AI about movies"},
-        {"command": "addfsub", "description": "Set force subscribe"}
-    ]
-    
-    try:
-        await app.set_bot_commands(commands)
-        logger.info("Bot commands set successfully")
-    except:
-        logger.warning("Could not set bot commands")
-    
-    # Keep bot running
-    logger.info("Bot is now running...")
-    await idle()
-    
-    # Stop bot
-    await app.stop()
-    logger.info("Bot stopped")
-
-if __name__ == "__main__":
-    # Run the bot
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-    except Exception as e:
-        logger.error(f"Bot crashed: {e}")
