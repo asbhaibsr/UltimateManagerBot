@@ -85,6 +85,10 @@ class HealthHandler(BaseHTTPRequestHandler):
         else:
             self.send_response(404)
             self.end_headers()
+    
+    def log_message(self, format, *args):
+        # Disable default logging
+        pass
 
 def run_health_server():
     """Run simple HTTP server for health checks"""
@@ -146,18 +150,20 @@ async def run_bot():
         logger.info("🤖 Bot is now running and ready to receive messages...")
         logger.info("📡 Waiting for messages...")
         
-        # Keep bot running forever
-        await idle()
+        # Keep bot running forever - SIMPLE VERSION WITHOUT IDLE
+        try:
+            while True:
+                await asyncio.sleep(3600)  # Sleep for 1 hour
+        except KeyboardInterrupt:
+            logger.info("⏹️ Bot stopped by user")
+            await app.stop()
+            sys.exit(0)
         
     except Exception as e:
         logger.error(f"❌ Bot crashed: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
-    except KeyboardInterrupt:
-        logger.info("⏹️ Bot stopped by user")
-        await app.stop()
-        sys.exit(0)
 
 def main():
     """Main function to run both health server and bot"""
