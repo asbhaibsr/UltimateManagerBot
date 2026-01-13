@@ -790,4 +790,13 @@ async def unban_command(client: Client, message: Message):
 
 if __name__ == "__main__":
     print("🚀 Starting Movie Helper Bot...")
-    app.run()
+    
+    # Simple run without idle
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        print("⏹️ Bot stopped by user")
+    except Exception as e:
+        print(f"❌ Bot crashed: {e}")
+        import traceback
+        traceback.print_exc()
