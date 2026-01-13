@@ -1,4 +1,5 @@
 import motor.motor_asyncio
+import datetime
 from config import Config
 
 # MongoDB connection
@@ -12,14 +13,13 @@ settings_col = db["settings"]
 force_sub_col = db["force_sub"]
 
 # User Functions
-async def add_user(user_id, username=None, first_name=None, last_name=None):
+async def add_user(user_id, username=None, first_name=None):
     await users_col.update_one(
         {"_id": user_id},
         {
             "$set": {
                 "username": username,
                 "first_name": first_name,
-                "last_name": last_name,
                 "banned": False,
                 "joined_at": datetime.datetime.now()
             }
@@ -83,7 +83,6 @@ async def get_settings(chat_id):
             "spelling_on": True,
             "auto_delete_on": False,
             "delete_time": 0,
-            "welcome_enabled": True,
             "force_sub_enabled": False
         }
         await settings_col.insert_one(default_settings)
@@ -115,5 +114,3 @@ async def remove_force_sub(chat_id):
 async def clear_junk():
     result = await users_col.delete_many({"banned": True})
     return result.deleted_count
-
-import datetime
