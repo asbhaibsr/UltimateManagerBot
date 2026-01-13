@@ -26,5 +26,8 @@ class Config:
     AUTO_DELETE_TIME = 300  # Seconds to auto-delete bot messages
     BROADCAST_DELAY = 0.5  # Seconds between broadcasts to avoid flood
     
+    # Force Sub Channel
+    FORCE_SUB_CHANNEL = os.getenv("FORCE_SUB_CHANNEL", "@asbhai_bsr")
+    
     # Logs Channel
     LOGS_CHANNEL = int(os.getenv("LOGS_CHANNEL", -1002283182645))
