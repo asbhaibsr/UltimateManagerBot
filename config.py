@@ -1,5 +1,3 @@
-# config.py
-
 import os
 from dotenv import load_dotenv
 
@@ -16,7 +14,7 @@ class Config:
     OWNER_ID = int(os.getenv("OWNER_ID", 7315805581))
     
     # Database
-    MONGO_DB_URL = os.getenv("MONGO_DB_URL", "mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority")
+    MONGO_DB_URL = os.getenv("MONGO_DB_URL", "")
     
     # AI Configuration
     G4F_MODEL = "gpt-3.5-turbo"
@@ -25,8 +23,11 @@ class Config:
     OMDB_API_KEY = os.getenv("OMDB_API_KEY", "6ed172d8")
     
     # Additional Config
-    AUTO_DELETE_TIME = 500  # Seconds to auto-delete bot messages
-    BROADCAST_DELAY = 1  # Seconds between broadcasts to avoid flood
+    AUTO_DELETE_TIME = 300  # Seconds to auto-delete bot messages
+    BROADCAST_DELAY = 0.5  # Seconds between broadcasts to avoid flood
     
     # Force Sub Channel
     FORCE_SUB_CHANNEL = os.getenv("FORCE_SUB_CHANNEL", "@asbhai_bsr")
+    
+    # Logs Channel
+    LOGS_CHANNEL = int(os.getenv("LOGS_CHANNEL", -1002283182645))
