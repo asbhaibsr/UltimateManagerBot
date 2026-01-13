@@ -11,41 +11,41 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(name)
 
 class HealthHandler(BaseHTTPRequestHandler):
     """Simple HTTP server for health checks"""
     def do_GET(self):
-        if self.path == '/health' or self.path == '/' or self.path == '/ping':
+        if self.path in ['/health', '/', '/ping']:
             self.send_response(200)
             self.send_header('Content-type', 'text/html')
             self.end_headers()
-            html = """
+            html = f"""
             <!DOCTYPE html>
             <html>
             <head>
                 <title>Movie Helper Bot - Status</title>
                 <style>
-                    body {
+                    body {{
                         font-family: Arial, sans-serif;
                         text-align: center;
                         padding: 50px;
                         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                         color: white;
-                    }
-                    .container {
+                    }}
+                    .container {{
                         background: rgba(255,255,255,0.1);
                         padding: 30px;
                         border-radius: 15px;
                         backdrop-filter: blur(10px);
                         max-width: 600px;
                         margin: 0 auto;
-                    }
-                    h1 {
+                    }}
+                    h1 {{
                         font-size: 2.5em;
                         margin-bottom: 10px;
-                    }
-                    .status {
+                    }}
+                    .status {{
                         background: green;
                         color: white;
                         padding: 10px 20px;
@@ -53,14 +53,14 @@ class HealthHandler(BaseHTTPRequestHandler):
                         display: inline-block;
                         margin: 20px 0;
                         font-size: 1.2em;
-                    }
-                    .info {
+                    }}
+                    .info {{
                         text-align: left;
                         margin-top: 20px;
                         background: rgba(255,255,255,0.1);
                         padding: 15px;
                         border-radius: 10px;
-                    }
+                    }}
                 </style>
             </head>
             <body>
@@ -73,14 +73,13 @@ class HealthHandler(BaseHTTPRequestHandler):
                         <h3>📊 Server Status:</h3>
                         <p>• Service: <strong>Movie Helper Bot</strong></p>
                         <p>• Status: <strong>Active & Healthy</strong></p>
-                        <p>• Platform: <strong>Koyeb Cloud</strong></p>
                         <p>• Health Check: <strong>Passing</strong></p>
-                        <p>• Last Check: {}</p>
+                        <p>• Last Check: {time.strftime('%Y-%m-%d %H:%M:%S')}</p>
                     </div>
                 </div>
             </body>
             </html>
-            """.format(time.strftime('%Y-%m-%d %H:%M:%S'))
+            """
             self.wfile.write(html.encode())
         else:
             self.send_response(404)
@@ -133,12 +132,10 @@ async def run_bot():
             from config import Config
             await app.send_message(
                 Config.OWNER_ID,
-                f"🤖 **Bot Started Successfully!**\n\n"
-                f"• **Bot:** @{bot_info.username}\n"
-                f"• **Time:** {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"• **Server:** Koyeb Cloud\n"
-                f"• **Status:** ✅ Running\n\n"
-                f"Health check: http://0.0.0.0:8080/health"
+                f"🤖 Bot Started Successfully!\n\n"
+                f"• Bot: @{bot_info.username}\n"
+                f"• Time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"• Status: ✅ Running"
             )
         except:
             pass
@@ -146,10 +143,9 @@ async def run_bot():
         logger.info("🤖 Bot is now running and ready to receive messages...")
         logger.info("📡 Waiting for messages...")
         
-        # Keep bot running forever
-        while True:
-            await asyncio.sleep(3600)  # Sleep for 1 hour
-            
+        # Keep bot running
+        await idle()
+        
     except Exception as e:
         logger.error(f"❌ Bot crashed: {e}")
         import traceback
