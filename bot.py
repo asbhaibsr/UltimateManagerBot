@@ -1,19 +1,16 @@
-#  bot.py
-
 import asyncio
 import logging
 from pyrogram import Client, filters, idle
 from pyrogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton, 
-    CallbackQuery, ChatMemberUpdated, ChatJoinRequest
+    CallbackQuery, ChatMemberUpdated
 )
-from pyrogram.errors import FloodWait, UserNotParticipant
+from pyrogram.errors import FloodWait, UserNotParticipant, ChatAdminRequired
 from config import Config
 from database import *
 from utils import MovieBotUtils
-from flask import Flask, jsonify
 import datetime
-import os
+import time
 
 # Setup logging
 logging.basicConfig(
@@ -24,101 +21,14 @@ logger = logging.getLogger(__name__)
 
 # Initialize Pyrogram Client
 app = Client(
-    "movie_helper_bot",
+    name="movie_helper_bot",
     api_id=Config.API_ID,
     api_hash=Config.API_HASH,
     bot_token=Config.BOT_TOKEN,
     in_memory=True
 )
 
-# Flask app for Koyeb health check
-flask_app = Flask(__name__)
-
-@flask_app.route('/')
-def home():
-    return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Movie Helper Bot</title>
-        <style>
-            body {
-                font-family: Arial, sans-serif;
-                text-align: center;
-                padding: 50px;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-            }
-            .container {
-                background: rgba(255,255,255,0.1);
-                padding: 30px;
-                border-radius: 15px;
-                backdrop-filter: blur(10px);
-                max-width: 600px;
-                margin: 0 auto;
-            }
-            h1 {
-                font-size: 2.5em;
-                margin-bottom: 20px;
-            }
-            .status {
-                background: green;
-                color: white;
-                padding: 10px 20px;
-                border-radius: 25px;
-                display: inline-block;
-                margin: 20px 0;
-            }
-            .info {
-                text-align: left;
-                margin-top: 20px;
-                background: rgba(255,255,255,0.1);
-                padding: 15px;
-                border-radius: 10px;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>🎬 Movie Helper Bot</h1>
-            <div class="status">✅ Bot is Running</div>
-            <p>This bot helps with movie recommendations, spelling correction, and more!</p>
-            
-            <div class="info">
-                <h3>📊 Bot Status:</h3>
-                <p>• Telegram Bot: <strong>Connected</strong></p>
-                <p>• Server: <strong>Active</strong></p>
-                <p>• Health Check: <strong>Passing</strong></p>
-                <p>• Last Updated: {}</p>
-            </div>
-            
-            <p style="margin-top: 30px;">
-                <a href="/health" style="color: #fff; text-decoration: underline;">Check API Health</a> | 
-                <a href="https://t.me/{}" style="color: #fff; text-decoration: underline;">Contact Bot</a>
-            </p>
-        </div>
-    </body>
-    </html>
-    """.format(
-        datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        Config.BOT_USERNAME
-    )
-
-@flask_app.route('/health')
-def health():
-    return jsonify({
-        "status": "healthy",
-        "service": "movie_helper_bot",
-        "timestamp": str(datetime.datetime.now()),
-        "telegram_bot": "running",
-        "version": "2.0.0"
-    })
-
-@flask_app.route('/ping')
-def ping():
-    return "pong"
-
-# ================ COMMAND HANDLERS ================
+# ================ START COMMAND ================
 
 @app.on_message(filters.command("start") & filters.private)
 async def start_command(client: Client, message: Message):
@@ -151,11 +61,13 @@ Add me to your groups and make me admin! 😊"""
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Add to Group", url=f"https://t.me/{Config.BOT_USERNAME}?startgroup=true")],
         [InlineKeyboardButton("📢 Updates Channel", url="https://t.me/asbhai_bsr")],
-        [InlineKeyboardButton("🤖 Help", callback_data="help")]
+        [InlineKeyboardButton("🤖 Help", callback_data="help_main")]
     ])
     
     await message.reply_text(welcome_text, reply_markup=buttons)
     await MovieBotUtils.auto_delete_message(client, message)
+
+# ================ HELP COMMAND ================
 
 @app.on_message(filters.command("help"))
 async def help_command(client: Client, message: Message):
@@ -179,6 +91,7 @@ async def help_command(client: Client, message: Message):
 • /settings - Group settings (admin only)
 • /stats - Bot statistics
 • /ai [question] - Ask AI
+• /addfsub - Set force subscribe channel
 • /setcommands - Set bot commands
 
 **Owner Commands:**
@@ -187,10 +100,16 @@ async def help_command(client: Client, message: Message):
 • /ban [user_id] - Ban user
 • /unban [user_id] - Unban user
 
+**Utility Commands:**
+• /ping - Check if bot is alive
+• /id - Get user/group ID
+
 Need help? Contact @asbhai_bsr 😊"""
     
     await message.reply_text(help_text)
     await MovieBotUtils.auto_delete_message(client, message)
+
+# ================ SETTINGS COMMAND ================
 
 @app.on_message(filters.command("settings") & filters.group)
 async def settings_command(client: Client, message: Message):
@@ -227,6 +146,8 @@ async def settings_command(client: Client, message: Message):
         reply_markup=buttons
     )
 
+# ================ STATS COMMAND ================
+
 @app.on_message(filters.command("stats") & filters.user(Config.OWNER_ID))
 async def stats_command(client: Client, message: Message):
     """Bot statistics"""
@@ -247,9 +168,12 @@ async def stats_command(client: Client, message: Message):
 
 **Database Status:** ✅ Connected
 **AI Status:** ✅ Active
-**Broadcast System:** ✅ Ready"""
+**Server:** Koyeb Cloud
+**Status:** ✅ Running"""
     
     await message.reply_text(stats_text, reply_markup=buttons)
+
+# ================ AI COMMAND ================
 
 @app.on_message(filters.command("ai"))
 async def ai_command(client: Client, message: Message):
@@ -266,6 +190,8 @@ async def ai_command(client: Client, message: Message):
     await waiting_msg.delete()
     await message.reply_text(response)
     await MovieBotUtils.auto_delete_message(client, message)
+
+# ================ BROADCAST COMMANDS ================
 
 @app.on_message(filters.command(["broadcast", "grp_broadcast"]) & filters.user(Config.OWNER_ID))
 async def broadcast_command(client: Client, message: Message):
@@ -310,6 +236,8 @@ async def broadcast_command(client: Client, message: Message):
         f"• 📈 Success Rate: {(success/len(target_ids)*100):.1f}%"
     )
 
+# ================ ADDFSUB COMMAND ================
+
 @app.on_message(filters.command("addfsub") & filters.group)
 async def addfsub_command(client: Client, message: Message):
     """Set force subscribe channel"""
@@ -343,6 +271,8 @@ async def addfsub_command(client: Client, message: Message):
         reply_markup=buttons
     )
 
+# ================ SETCOMMANDS COMMAND ================
+
 @app.on_message(filters.command("setcommands"))
 async def setcommands_command(client: Client, message: Message):
     """Set bot commands"""
@@ -355,8 +285,70 @@ async def setcommands_command(client: Client, message: Message):
         {"command": "addfsub", "description": "Set force subscribe"}
     ]
     
-    await client.set_bot_commands(commands)
-    await message.reply_text("✅ Bot commands set successfully!")
+    try:
+        await client.set_bot_commands(commands)
+        await message.reply_text("✅ Bot commands set successfully!")
+    except Exception as e:
+        await message.reply_text(f"❌ Failed to set commands: {e}")
+
+# ================ PING COMMAND ================
+
+@app.on_message(filters.command("ping"))
+async def ping_command(client: Client, message: Message):
+    """Check if bot is alive"""
+    start_time = time.time()
+    msg = await message.reply_text("🏓 Pinging...")
+    end_time = time.time()
+    
+    ping_time = round((end_time - start_time) * 1000, 2)
+    
+    await msg.edit_text(f"🏓 **Pong!**\n\n⏱ **Response Time:** {ping_time}ms\n🚀 **Status:** ✅ Alive\n☁️ **Server:** Koyeb Cloud")
+
+# ================ ID COMMAND ================
+
+@app.on_message(filters.command("id"))
+async def id_command(client: Client, message: Message):
+    """Get user/group ID"""
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    
+    text = f"👤 **Your ID:** `{user_id}`\n"
+    
+    if message.chat.type != "private":
+        text += f"👥 **Group ID:** `{chat_id}`\n"
+        text += f"📝 **Group Title:** {message.chat.title}\n"
+    
+    await message.reply_text(text)
+
+# ================ BAN/UNBAN COMMANDS ================
+
+@app.on_message(filters.command("ban") & filters.user(Config.OWNER_ID))
+async def ban_command(client: Client, message: Message):
+    """Ban a user"""
+    if len(message.command) < 2:
+        await message.reply_text("Usage: /ban <user_id>")
+        return
+    
+    try:
+        user_id = int(message.command[1])
+        await ban_user(user_id)
+        await message.reply_text(f"✅ User {user_id} banned successfully!")
+    except ValueError:
+        await message.reply_text("❌ Invalid user ID!")
+
+@app.on_message(filters.command("unban") & filters.user(Config.OWNER_ID))
+async def unban_command(client: Client, message: Message):
+    """Unban a user"""
+    if len(message.command) < 2:
+        await message.reply_text("Usage: /unban <user_id>")
+        return
+    
+    try:
+        user_id = int(message.command[1])
+        await unban_user(user_id)
+        await message.reply_text(f"✅ User {user_id} unbanned successfully!")
+    except ValueError:
+        await message.reply_text("❌ Invalid user ID!")
 
 # ================ SPELLING CORRECTION ================
 
@@ -487,8 +479,53 @@ async def callback_handler(client: Client, query: CallbackQuery):
     data = query.data
     chat_id = query.message.chat.id if query.message else query.from_user.id
     
-    if data == "help":
-        await help_command(client, query.message)
+    if data == "help_main":
+        help_text = """🆘 **Help Menu** 🆘
+
+**Main Features:**
+• 🎬 Movie recommendations
+• ✨ Spelling correction
+• 🗑️ Auto delete files
+• 🔗 Force subscribe
+• 🤖 AI chat
+
+**Quick Commands:**
+/start - Start bot
+/help - Detailed help
+/settings - Group settings
+/ai - Ask AI anything
+
+**Need more help?**
+Contact: @asbhai_bsr"""
+        
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Back to Start", callback_data="back_to_start")],
+            [InlineKeyboardButton("⚙️ Group Settings", url=f"https://t.me/{Config.BOT_USERNAME}?startgroup=true")]
+        ])
+        
+        await query.message.edit_text(help_text, reply_markup=buttons)
+        await query.answer()
+    
+    elif data == "back_to_start":
+        welcome_text = f"""🎬 **Welcome!** 🎬
+
+I'm your Movie Helper Bot! 🤖
+
+**Features:**
+✅ Spelling Correction in Groups
+✅ Auto Delete Files
+✅ AI Movie Recommendations
+✅ Force Subscribe Channel
+
+Add me to groups and use /settings to configure! 😊"""
+        
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("➕ Add to Group", url=f"https://t.me/{Config.BOT_USERNAME}?startgroup=true")],
+            [InlineKeyboardButton("📢 Updates Channel", url="https://t.me/asbhai_bsr")],
+            [InlineKeyboardButton("🤖 Help", callback_data="help_main")]
+        ])
+        
+        await query.message.edit_text(welcome_text, reply_markup=buttons)
         await query.answer()
     
     elif data == "toggle_spelling":
@@ -530,6 +567,7 @@ async def callback_handler(client: Client, query: CallbackQuery):
             [InlineKeyboardButton("5 Minutes", callback_data="time_5")],
             [InlineKeyboardButton("10 Minutes", callback_data="time_10")],
             [InlineKeyboardButton("15 Minutes", callback_data="time_15")],
+            [InlineKeyboardButton("30 Minutes", callback_data="time_30")],
             [InlineKeyboardButton("Permanent", callback_data="time_0")],
             [InlineKeyboardButton("🔙 Back", callback_data="back_settings")]
         ])
@@ -542,7 +580,27 @@ async def callback_handler(client: Client, query: CallbackQuery):
         
         time_text = f"{minutes} minutes" if minutes > 0 else "Permanent"
         await query.answer(f"Delete time set to {time_text}")
-        await query.message.delete()
+        
+        # Go back to settings
+        settings = await get_settings(chat_id)
+        spelling_status = "✅ ON" if settings.get("spelling_on", True) else "❌ OFF"
+        delete_status = "✅ ON" if settings.get("auto_delete_on", False) else "❌ OFF"
+        delete_time = minutes
+        time_text = f"{delete_time} min" if delete_time > 0 else "Permanent"
+        
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"Spelling Correction: {spelling_status}", callback_data="toggle_spelling")],
+            [InlineKeyboardButton(f"Auto Delete Files: {delete_status}", callback_data="toggle_auto_delete")],
+            [InlineKeyboardButton(f"Delete Time: {time_text}", callback_data="set_delete_time")],
+            [InlineKeyboardButton("🔗 Force Subscribe", callback_data="force_sub_menu")],
+            [InlineKeyboardButton("❌ Close", callback_data="close_settings")]
+        ])
+        
+        await query.message.edit_text(
+            f"⚙️ **Settings for {query.message.chat.title}**\n\n"
+            "Configure your group settings below:",
+            reply_markup=buttons
+        )
     
     elif data == "force_sub_menu":
         force_sub = await get_force_sub(chat_id)
@@ -672,6 +730,19 @@ async def callback_handler(client: Client, query: CallbackQuery):
             reply_markup=buttons
         )
         await query.answer()
+    
+    elif data == "set_fsub":
+        await query.message.edit_text(
+            "🔗 **Set Force Subscribe Channel**\n\n"
+            "To set force subscribe channel:\n"
+            "1. Forward any message from your channel\n"
+            "2. Reply to it with command: `/addfsub`\n\n"
+            "Make sure I'm admin in that channel!",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Back", callback_data="force_sub_menu")]
+            ])
+        )
+        await query.answer()
 
 # ================ GROUP EVENTS ================
 
@@ -706,7 +777,7 @@ Need help? Use /help 😊"""
             
             buttons = InlineKeyboardMarkup([
                 [InlineKeyboardButton("⚙️ Settings", callback_data="settings_menu")],
-                [InlineKeyboardButton("📚 Help", callback_data="help")]
+                [InlineKeyboardButton("📚 Help", callback_data="help_main")]
             ])
             
             await message.reply_text(welcome_text, reply_markup=buttons)
