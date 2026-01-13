@@ -13,13 +13,14 @@ settings_col = db["settings"]
 force_sub_col = db["force_sub"]
 
 # User Functions
-async def add_user(user_id, username=None, first_name=None):
+async def add_user(user_id, username=None, first_name=None, last_name=None):
     await users_col.update_one(
         {"_id": user_id},
         {
             "$set": {
                 "username": username,
                 "first_name": first_name,
+                "last_name": last_name,
                 "banned": False,
                 "joined_at": datetime.datetime.now()
             }
@@ -78,14 +79,19 @@ async def remove_group(group_id):
 async def get_settings(chat_id):
     settings = await settings_col.find_one({"_id": chat_id})
     if not settings:
+        # Default settings create karo
         default_settings = {
             "_id": chat_id,
             "spelling_on": True,
             "auto_delete_on": False,
             "delete_time": 0,
+            "welcome_enabled": True,
             "force_sub_enabled": False
         }
-        await settings_col.insert_one(default_settings)
+        try:
+            await settings_col.insert_one(default_settings)
+        except:
+            pass # Race condition handle
         return default_settings
     return settings
 
