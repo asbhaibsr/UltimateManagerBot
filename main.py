@@ -2,16 +2,16 @@ import asyncio
 import logging
 import sys
 import os
+import time
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import time
 
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(name)
+logger = logging.getLogger(__name__)
 
 class HealthHandler(BaseHTTPRequestHandler):
     """Simple HTTP server for health checks"""
@@ -73,6 +73,7 @@ class HealthHandler(BaseHTTPRequestHandler):
                         <h3>📊 Server Status:</h3>
                         <p>• Service: <strong>Movie Helper Bot</strong></p>
                         <p>• Status: <strong>Active & Healthy</strong></p>
+                        <p>• Platform: <strong>Koyeb Cloud</strong></p>
                         <p>• Health Check: <strong>Passing</strong></p>
                         <p>• Last Check: {time.strftime('%Y-%m-%d %H:%M:%S')}</p>
                     </div>
@@ -135,7 +136,9 @@ async def run_bot():
                 f"🤖 Bot Started Successfully!\n\n"
                 f"• Bot: @{bot_info.username}\n"
                 f"• Time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"• Status: ✅ Running"
+                f"• Server: Koyeb Cloud\n"
+                f"• Status: ✅ Running\n\n"
+                f"Health check: http://0.0.0.0:8080/health"
             )
         except:
             pass
@@ -143,7 +146,7 @@ async def run_bot():
         logger.info("🤖 Bot is now running and ready to receive messages...")
         logger.info("📡 Waiting for messages...")
         
-        # Keep bot running
+        # Keep bot running forever
         await idle()
         
     except Exception as e:
