@@ -1,23 +1,23 @@
 import asyncio
 import logging
+import time
 from pyrogram import Client, filters, idle
+from pyrogram.enums import ChatMemberStatus, ChatType
 from pyrogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton, 
-    CallbackQuery, ChatMemberUpdated
+    CallbackQuery, ChatMemberUpdated, ChatPermissions
 )
-from pyrogram.errors import FloodWait, UserNotParticipant, ChatAdminRequired
+from pyrogram.errors import UserNotParticipant, FloodWait, ChatAdminRequired
 from config import Config
 from database import *
 from utils import MovieBotUtils
-import datetime
-import time
 
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("MovieBot")
 
 # Initialize Pyrogram Client
 app = Client(
@@ -28,100 +28,90 @@ app = Client(
     in_memory=True
 )
 
-# ================ START COMMAND ================
+# ================ HELPER FUNCTIONS ================
+async def is_admin(chat_id: int, user_id: int) -> bool:
+    """Check if user is admin"""
+    if user_id == Config.OWNER_ID:
+        return True
+    try:
+        member = await app.get_chat_member(chat_id, user_id)
+        return member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]
+    except:
+        return False
 
+# ================ START COMMAND ================
 @app.on_message(filters.command("start") & filters.private)
 async def start_command(client: Client, message: Message):
     """Handle /start command"""
     user = message.from_user
     await add_user(user.id, user.username, user.first_name)
     
-    welcome_text = f"""🎬 **Welcome {user.first_name}!** 🎬
+    welcome_text = f"""🎬 Welcome {user.first_name}! 🎬
 
 I'm your Movie Helper Bot! 🤖
 
-**Features:**
+Features:
 ✅ Spelling Correction in Groups
 ✅ Auto Delete Files
 ✅ AI Movie Recommendations
 ✅ Force Subscribe Channel
 ✅ Broadcast Messages
-✅ Beautiful UI with Buttons
-
-**Admin Commands:**
-• /settings - Group settings
-• /stats - Bot statistics
-• /ai [query] - Ask AI anything
-• /addfsub - Set force subscribe
-• /broadcast - Broadcast to users
-• /grp_broadcast - Broadcast to groups
 
 Add me to your groups and make me admin! 😊"""
     
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Add to Group", url=f"https://t.me/{Config.BOT_USERNAME}?startgroup=true")],
-        [InlineKeyboardButton("📢 Updates Channel", url="https://t.me/asbhai_bsr")],
         [InlineKeyboardButton("🤖 Help", callback_data="help_main")]
     ])
     
     await message.reply_text(welcome_text, reply_markup=buttons)
-    await MovieBotUtils.auto_delete_message(client, message)
 
 # ================ HELP COMMAND ================
-
 @app.on_message(filters.command("help"))
 async def help_command(client: Client, message: Message):
     """Handle /help command"""
-    help_text = """🆘 **Help Guide** 🆘
+    help_text = """🆘 Help Guide 🆘
 
-**For Group Admins:**
+For Group Admins:
 1. Add me to your group
 2. Make me admin with delete message permission
 3. Use /settings to configure
 
-**Group Features:**
-• **Spelling Correction:** Auto-corrects movie names
-• **Auto Delete Files:** Remove unwanted media
-• **Force Subscribe:** Force users to join channel
-• **AI Chat:** Ask about movies/series
+Group Features:
+• Spelling Correction: Auto-corrects movie names
+• Auto Delete Files: Remove unwanted media
+• Force Subscribe: Force users to join channel
+• AI Chat: Ask about movies/series
 
-**Commands List:**
+Commands List:
 • /start - Start the bot
 • /help - This message
 • /settings - Group settings (admin only)
 • /stats - Bot statistics
 • /ai [question] - Ask AI
 • /addfsub - Set force subscribe channel
-• /setcommands - Set bot commands
 
-**Owner Commands:**
+Owner Commands:
 • /broadcast - Broadcast to users
 • /grp_broadcast - Broadcast to groups
 • /ban [user_id] - Ban user
 • /unban [user_id] - Unban user
 
-**Utility Commands:**
+Utility Commands:
 • /ping - Check if bot is alive
-• /id - Get user/group ID
-
-Need help? Contact @asbhai_bsr 😊"""
+• /id - Get user/group ID"""
     
     await message.reply_text(help_text)
-    await MovieBotUtils.auto_delete_message(client, message)
 
 # ================ SETTINGS COMMAND ================
-
 @app.on_message(filters.command("settings") & filters.group)
 async def settings_command(client: Client, message: Message):
     """Group settings menu"""
     # Check if user is admin
-    try:
-        member = await client.get_chat_member(message.chat.id, message.from_user.id)
-        if member.status not in ["creator", "administrator"]:
-            await message.reply_text("❌ Only admins can change settings!")
-            return
-    except:
-        await message.reply_text("❌ Couldn't verify admin status!")
+    if not await is_admin(message.chat.id, message.from_user.id):
+        msg = await message.reply_text("❌ Only Group Admins/Owner can use settings!")
+        await asyncio.sleep(5)
+        await msg.delete()
         return
     
     settings = await get_settings(message.chat.id)
@@ -141,13 +131,12 @@ async def settings_command(client: Client, message: Message):
     ])
     
     await message.reply_text(
-        f"⚙️ **Settings for {message.chat.title}**\n\n"
+        f"⚙️ Settings for {message.chat.title}\n\n"
         "Configure your group settings below:",
         reply_markup=buttons
     )
 
 # ================ STATS COMMAND ================
-
 @app.on_message(filters.command("stats") & filters.user(Config.OWNER_ID))
 async def stats_command(client: Client, message: Message):
     """Bot statistics"""
@@ -159,27 +148,21 @@ async def stats_command(client: Client, message: Message):
         [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_stats")]
     ])
     
-    stats_text = f"""📊 **Bot Statistics**
+    stats_text = f"""📊 Bot Statistics
 
-👥 **Total Users:** {users}
-👥 **Total Groups:** {groups}
-⚡ **Bot Uptime:** 24/7
-🔄 **Last Updated:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-**Database Status:** ✅ Connected
-**AI Status:** ✅ Active
-**Server:** Koyeb Cloud
-**Status:** ✅ Running"""
+👥 Total Users: {users}
+👥 Total Groups: {groups}
+⚡ Bot Uptime: 24/7
+🔄 Last Updated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
     
     await message.reply_text(stats_text, reply_markup=buttons)
 
 # ================ AI COMMAND ================
-
 @app.on_message(filters.command("ai"))
 async def ai_command(client: Client, message: Message):
     """AI chat feature"""
     if len(message.command) < 2:
-        await message.reply_text("Usage: `/ai your question`\nExample: `/ai Tell me about Inception movie`")
+        await message.reply_text("Usage: /ai your question\nExample: /ai Tell me about Inception movie")
         return
     
     query = ' '.join(message.command[1:])
@@ -189,10 +172,8 @@ async def ai_command(client: Client, message: Message):
     
     await waiting_msg.delete()
     await message.reply_text(response)
-    await MovieBotUtils.auto_delete_message(client, message)
 
 # ================ BROADCAST COMMANDS ================
-
 @app.on_message(filters.command(["broadcast", "grp_broadcast"]) & filters.user(Config.OWNER_ID))
 async def broadcast_command(client: Client, message: Message):
     """Broadcast messages to users/groups"""
@@ -216,7 +197,7 @@ async def broadcast_command(client: Client, message: Message):
         try:
             await message.reply_to_message.copy(target_id)
             success += 1
-            if idx % 10 == 0:  # Update progress every 10 sends
+            if idx % 10 == 0:
                 await progress_msg.edit_text(
                     f"📤 Broadcasting to {len(target_ids)} {broadcast_type}...\n"
                     f"Progress: {idx}/{len(target_ids)}\n"
@@ -228,8 +209,8 @@ async def broadcast_command(client: Client, message: Message):
             logger.error(f"Failed to send to {target_id}: {e}")
     
     await progress_msg.edit_text(
-        f"✅ **Broadcast Complete!**\n\n"
-        f"📊 **Results:**\n"
+        f"✅ Broadcast Complete!\n\n"
+        f"📊 Results:\n"
         f"• Total {broadcast_type.capitalize()}: {len(target_ids)}\n"
         f"• ✅ Successful: {success}\n"
         f"• ❌ Failed: {failed}\n"
@@ -237,62 +218,36 @@ async def broadcast_command(client: Client, message: Message):
     )
 
 # ================ ADDFSUB COMMAND ================
-
 @app.on_message(filters.command("addfsub") & filters.group)
 async def addfsub_command(client: Client, message: Message):
     """Set force subscribe channel"""
-    if not message.reply_to_message or not message.reply_to_message.forward_from_chat:
-        await message.reply_text("❌ Please forward a message from the channel and reply with `/addfsub`")
-        return
-    
-    channel = message.reply_to_message.forward_from_chat
-    if channel.type != "channel":
-        await message.reply_text("❌ Please forward from a channel, not a group!")
-        return
-    
-    try:
-        # Check if bot is admin in channel
-        await client.get_chat_member(channel.id, (await client.get_me()).id)
-    except UserNotParticipant:
-        await message.reply_text("❌ Make me admin in the channel first!")
-        return
-    
-    await set_force_sub(message.chat.id, channel.id)
-    
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{channel.username}")],
-        [InlineKeyboardButton("✅ Test Force Sub", callback_data="test_fsub")]
-    ])
-    
-    await message.reply_text(
-        f"✅ **Force Subscribe Enabled!**\n\n"
-        f"**Channel:** {channel.title}\n"
-        f"New users will need to join this channel before chatting.",
-        reply_markup=buttons
-    )
+    # Check Admin
+    if not await is_admin(message.chat.id, message.from_user.id):
+        return await message.reply_text("❌ Only Admins can use this!")
 
-# ================ SETCOMMANDS COMMAND ================
+    if not message.reply_to_message:
+        return await message.reply_text("❌ Reply to a forwarded message from your channel!")
 
-@app.on_message(filters.command("setcommands"))
-async def setcommands_command(client: Client, message: Message):
-    """Set bot commands"""
-    commands = [
-        {"command": "start", "description": "Start the bot"},
-        {"command": "help", "description": "Get help"},
-        {"command": "settings", "description": "Group settings"},
-        {"command": "stats", "description": "Bot statistics"},
-        {"command": "ai", "description": "Ask AI about movies"},
-        {"command": "addfsub", "description": "Set force subscribe"}
-    ]
+    # Logic: Check forwarded chat
+    fwd_chat = message.reply_to_message.forward_from_chat
     
+    if not fwd_chat or fwd_chat.type != "channel":
+        return await message.reply_text("❌ I cannot see the channel ID. Make sure 'Forwarding' is enabled in channel settings OR bot is admin in channel.")
+
+    channel_id = fwd_chat.id
+    channel_title = fwd_chat.title
+
+    # Verify Bot is Admin in that Channel
     try:
-        await client.set_bot_commands(commands)
-        await message.reply_text("✅ Bot commands set successfully!")
-    except Exception as e:
-        await message.reply_text(f"❌ Failed to set commands: {e}")
+        await client.get_chat_member(channel_id, (await client.get_me()).id)
+    except:
+        return await message.reply_text("❌ <b>Error:</b> I am not an Admin in that Channel! Please add me there first.")
+
+    # Save to DB
+    await set_force_sub(message.chat.id, channel_id)
+    await message.reply_text(f"✅ <b>Force Subscribe Connected!</b>\nLinked to: {channel_title}")
 
 # ================ PING COMMAND ================
-
 @app.on_message(filters.command("ping"))
 async def ping_command(client: Client, message: Message):
     """Check if bot is alive"""
@@ -302,26 +257,24 @@ async def ping_command(client: Client, message: Message):
     
     ping_time = round((end_time - start_time) * 1000, 2)
     
-    await msg.edit_text(f"🏓 **Pong!**\n\n⏱ **Response Time:** {ping_time}ms\n🚀 **Status:** ✅ Alive\n☁️ **Server:** Koyeb Cloud")
+    await msg.edit_text(f"🏓 Pong!\n\n⏱ Response Time: {ping_time}ms\n🚀 Status: ✅ Alive")
 
 # ================ ID COMMAND ================
-
 @app.on_message(filters.command("id"))
 async def id_command(client: Client, message: Message):
     """Get user/group ID"""
     chat_id = message.chat.id
     user_id = message.from_user.id
     
-    text = f"👤 **Your ID:** `{user_id}`\n"
+    text = f"👤 Your ID: {user_id}\n"
     
     if message.chat.type != "private":
-        text += f"👥 **Group ID:** `{chat_id}`\n"
-        text += f"📝 **Group Title:** {message.chat.title}\n"
+        text += f"👥 Group ID: {chat_id}\n"
+        text += f"📝 Group Title: {message.chat.title}\n"
     
     await message.reply_text(text)
 
 # ================ BAN/UNBAN COMMANDS ================
-
 @app.on_message(filters.command("ban") & filters.user(Config.OWNER_ID))
 async def ban_command(client: Client, message: Message):
     """Ban a user"""
@@ -350,41 +303,38 @@ async def unban_command(client: Client, message: Message):
     except ValueError:
         await message.reply_text("❌ Invalid user ID!")
 
-# ================ SPELLING CORRECTION ================
+# ================ MAIN FILTER (JUNK REMOVER) ================
+@app.on_message(filters.group & filters.text & ~filters.command(["start", "help", "settings", "stats", "ai", "broadcast", "grp_broadcast", "addfsub", "ping", "id", "ban", "unban"]))
+async def group_message_filter(client: Client, message: Message):
+    # Ignore Admins/Owner
+    if await is_admin(message.chat.id, message.from_user.id):
+        return
 
-@app.on_message(filters.group & filters.text)
-async def spelling_correction(client: Client, message: Message):
-    """Auto correct spelling for movie names"""
     settings = await get_settings(message.chat.id)
     if not settings.get("spelling_on", True):
         return
-    
-    text = message.text.lower()
-    extra_words = ["dedo", "chahiye", "link", "download", "movie", "film", 
-                  "ye movie", "dedijye", "do", "de do", "chaiye", "chaiyea"]
-    
-    # Check if message contains movie name with extra words
-    movie_name = MovieBotUtils.extract_movie_name(text)
-    if movie_name and any(word in text for word in extra_words):
+
+    text = message.text
+    quality = MovieBotUtils.check_message_quality(text)
+
+    if quality == "JUNK":
+        # Delete IMMEDIATELY
         try:
-            await client.delete_messages(message.chat.id, message.id)
-            
-            correction_msg = await message.reply_text(
-                f"🚫 **Oye {message.from_user.first_name}!**\n\n"
-                f"Movie/series name ke aage faltu words mat likho!\n"
-                f"✅ **Correct Format:** `{movie_name} 2023` ya `{movie_name} S01 E01`\n\n"
-                f"Sirf naam likho, baaki main samajh jaungi! 😊",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("😊 OK", callback_data="ok_correction")]
-                ])
+            await message.delete()
+            # Optional: Warn user
+            warn = await message.reply_text(
+                f"🚫 {message.from_user.mention}, extra words allowed nahi hain!\n"
+                f"Sahi tarika: `The Raja Saab` ya `Stranger Things S01`"
             )
+            await MovieBotUtils.auto_delete_message(client, warn, 5)
+        except Exception as e:
+            logger.error(f"Delete Error: {e}")
             
-            await MovieBotUtils.auto_delete_message(client, correction_msg)
-        except:
-            pass
+    elif quality == "CLEAN":
+        # Message is clean. Let it stay.
+        pass
 
 # ================ AUTO DELETE FILES ================
-
 @app.on_message(filters.group & (filters.document | filters.video | filters.audio | filters.photo))
 async def auto_delete_files(client: Client, message: Message):
     """Auto delete media files"""
@@ -395,108 +345,151 @@ async def auto_delete_files(client: Client, message: Message):
     delete_time = settings.get("delete_time", 0)
     
     if delete_time > 0:
-        await asyncio.sleep(delete_time * 60)  # Convert minutes to seconds
+        await asyncio.sleep(delete_time * 60)
     
     try:
         await client.delete_messages(message.chat.id, message.id)
-        
-        # Send notification if enabled
-        notification = await message.reply_text(
-            f"🗑️ **File Auto-Deleted**\n"
-            f"Files are automatically deleted after {delete_time} minutes in this group.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("⚙️ Settings", callback_data="settings_menu")]
-            ])
-        )
-        await MovieBotUtils.auto_delete_message(client, notification)
     except:
         pass
 
-# ================ FORCE SUBSCRIBE ================
-
+# ================ FORCE SUBSCRIBE ENFORCEMENT ================
 @app.on_chat_member_updated()
-async def handle_new_member(client: Client, update: ChatMemberUpdated):
-    """Handle new members for force subscribe"""
-    if update.new_chat_member and update.new_chat_member.status == "member":
-        chat_id = update.chat.id
-        user_id = update.new_chat_member.user.id
+async def handle_fsub_join(client: Client, update: ChatMemberUpdated):
+    # Only check if new member joins
+    if not update.new_chat_member:
+        return
         
-        # Get force sub channel
-        force_sub = await get_force_sub(chat_id)
-        if not force_sub:
-            return
-        
-        channel_id = force_sub.get("channel_id")
-        if not channel_id:
-            return
-        
+    # Ignore if user is bot or already left
+    if update.new_chat_member.user.is_bot:
+        return
+
+    chat_id = update.chat.id
+    user_id = update.new_chat_member.user.id
+    
+    # Check DB for Force Sub Channel
+    fsub_data = await get_force_sub(chat_id)
+    if not fsub_data:
+        return
+
+    channel_id = fsub_data["channel_id"]
+    
+    try:
+        # Check if user is in channel
+        await client.get_chat_member(channel_id, user_id)
+        # User is present, do nothing
+    except UserNotParticipant:
+        # User NOT in channel -> Mute them & Send Alert
         try:
-            # Check if user is in channel
-            await client.get_chat_member(channel_id, user_id)
-            return  # User is subscribed
-        except UserNotParticipant:
-            # User not in channel, restrict them
             await client.restrict_chat_member(
-                chat_id,
-                user_id,
-                permissions=dict(
-                    can_send_messages=False,
-                    can_send_media_messages=False,
-                    can_send_other_messages=False
-                )
+                chat_id, user_id, 
+                ChatPermissions(can_send_messages=False)
             )
             
-            # Get channel info
-            channel = await client.get_chat(channel_id)
-            channel_link = f"https://t.me/{channel.username}" if channel.username else ""
-            
+            # Get Invite Link
+            try:
+                chat_info = await client.get_chat(channel_id)
+                link = chat_info.invite_link or f"https://t.me/{chat_info.username}"
+            except:
+                link = "#"
+
             buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📢 Join Channel", url=channel_link)],
-                [InlineKeyboardButton("✅ I've Joined", callback_data=f"verify_{user_id}")]
+                [InlineKeyboardButton("📢 Join Channel", url=link)],
+                [InlineKeyboardButton("✅ I Joined", callback_data=f"unmute_{user_id}")]
             ])
             
             welcome_msg = await client.send_message(
                 chat_id,
-                f"👋 **Welcome {update.new_chat_member.user.first_name}!**\n\n"
-                f"📢 Please join our channel to continue chatting:\n"
-                f"**Channel:** {channel.title}\n\n"
-                f"After joining, click the 'I've Joined' button below!",
+                f"👋 Welcome {update.new_chat_member.user.mention}!\n\n"
+                f"🔒 **Group Message Karne ke liye Channel Join karein.**",
                 reply_markup=buttons
             )
             
-            # Store message ID for later deletion
-            await asyncio.sleep(300)  # Delete after 5 minutes
+            # Auto delete welcome message after 5 minutes
+            await asyncio.sleep(300)
             try:
                 await welcome_msg.delete()
             except:
                 pass
+                
+        except Exception as e:
+            logger.error(f"Fsub Error: {e}")
+    except Exception as e:
+        logger.error(f"Fsub Admin Check Error: {e}")
+
+# ================ GROUP EVENTS ================
+@app.on_message(filters.new_chat_members)
+async def welcome_new_members(client: Client, message: Message):
+    """Welcome new members and add group to database"""
+    for member in message.new_chat_members:
+        if member.is_self:  # Bot added to group
+            await add_group(
+                message.chat.id,
+                message.chat.title,
+                message.chat.username
+            )
+            
+            welcome_text = f"""🎬 Thanks for adding me! 🎬
+
+I'm Movie Helper Bot! Here's what I can do:
+
+✅ Auto-correct movie names (remove extra words)
+✅ Auto-delete files after set time
+✅ Force subscribe to your channel
+✅ AI movie recommendations
+
+Setup Instructions:
+1. Make me admin with delete permissions
+2. Use /settings to configure
+3. Set up force subscribe with /addfsub
+
+Need help? Use /help 😊"""
+            
+            buttons = InlineKeyboardMarkup([
+                [InlineKeyboardButton("⚙️ Settings", callback_data="settings_menu")],
+                [InlineKeyboardButton("📚 Help", callback_data="help_main")]
+            ])
+            
+            await message.reply_text(welcome_text, reply_markup=buttons)
+            
+            # Notify owner
+            if Config.OWNER_ID:
+                owner_msg = (
+                    f"🤖 Bot Added to New Group!\n\n"
+                    f"Group: {message.chat.title}\n"
+                    f"ID: {message.chat.id}\n"
+                    f"Username: @{message.chat.username or 'N/A'}\n"
+                    f"Added by: {message.from_user.mention if message.from_user else 'Unknown'}"
+                )
+                try:
+                    await client.send_message(Config.OWNER_ID, owner_msg)
+                except:
+                    pass
+            
+            break
 
 # ================ CALLBACK QUERY HANDLERS ================
-
 @app.on_callback_query()
 async def callback_handler(client: Client, query: CallbackQuery):
     """Handle all callback queries"""
     data = query.data
     chat_id = query.message.chat.id if query.message else query.from_user.id
+    user_id = query.from_user.id
     
     if data == "help_main":
-        help_text = """🆘 **Help Menu** 🆘
+        help_text = """🆘 Help Menu 🆘
 
-**Main Features:**
+Main Features:
 • 🎬 Movie recommendations
 • ✨ Spelling correction
 • 🗑️ Auto delete files
 • 🔗 Force subscribe
 • 🤖 AI chat
 
-**Quick Commands:**
+Quick Commands:
 /start - Start bot
 /help - Detailed help
 /settings - Group settings
-/ai - Ask AI anything
-
-**Need more help?**
-Contact: @asbhai_bsr"""
+/ai - Ask AI anything"""
         
         buttons = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 Back to Start", callback_data="back_to_start")],
@@ -507,11 +500,11 @@ Contact: @asbhai_bsr"""
         await query.answer()
     
     elif data == "back_to_start":
-        welcome_text = f"""🎬 **Welcome!** 🎬
+        welcome_text = f"""🎬 Welcome! 🎬
 
 I'm your Movie Helper Bot! 🤖
 
-**Features:**
+Features:
 ✅ Spelling Correction in Groups
 ✅ Auto Delete Files
 ✅ AI Movie Recommendations
@@ -521,7 +514,6 @@ Add me to groups and use /settings to configure! 😊"""
         
         buttons = InlineKeyboardMarkup([
             [InlineKeyboardButton("➕ Add to Group", url=f"https://t.me/{Config.BOT_USERNAME}?startgroup=true")],
-            [InlineKeyboardButton("📢 Updates Channel", url="https://t.me/asbhai_bsr")],
             [InlineKeyboardButton("🤖 Help", callback_data="help_main")]
         ])
         
@@ -571,7 +563,7 @@ Add me to groups and use /settings to configure! 😊"""
             [InlineKeyboardButton("Permanent", callback_data="time_0")],
             [InlineKeyboardButton("🔙 Back", callback_data="back_settings")]
         ])
-        await query.message.edit_text("⏰ **Select Auto-Delete Time:**", reply_markup=buttons)
+        await query.message.edit_text("⏰ Select Auto-Delete Time:", reply_markup=buttons)
         await query.answer()
     
     elif data.startswith("time_"):
@@ -597,7 +589,7 @@ Add me to groups and use /settings to configure! 😊"""
         ])
         
         await query.message.edit_text(
-            f"⚙️ **Settings for {query.message.chat.title}**\n\n"
+            f"⚙️ Settings for {query.message.chat.title}\n\n"
             "Configure your group settings below:",
             reply_markup=buttons
         )
@@ -616,9 +608,9 @@ Add me to groups and use /settings to configure! 😊"""
                     [InlineKeyboardButton("🔙 Back", callback_data="back_settings")]
                 ])
                 await query.message.edit_text(
-                    f"🔗 **Force Subscribe Channel:**\n\n"
-                    f"**Channel:** {channel.title}\n"
-                    f"**Status:** ✅ Connected\n\n"
+                    f"🔗 Force Subscribe Channel:\n\n"
+                    f"Channel: {channel.title}\n"
+                    f"Status: ✅ Connected\n\n"
                     f"New members must join this channel.",
                     reply_markup=buttons
                 )
@@ -627,7 +619,7 @@ Add me to groups and use /settings to configure! 😊"""
                     [InlineKeyboardButton("🔙 Back", callback_data="back_settings")]
                 ])
                 await query.message.edit_text(
-                    "❌ **Channel Not Found!**\n\n"
+                    "❌ Channel Not Found!\n\n"
                     "The channel is no longer accessible or bot was removed.",
                     reply_markup=buttons
                 )
@@ -637,7 +629,7 @@ Add me to groups and use /settings to configure! 😊"""
                 [InlineKeyboardButton("🔙 Back", callback_data="back_settings")]
             ])
             await query.message.edit_text(
-                "🔗 **Force Subscribe**\n\n"
+                "🔗 Force Subscribe\n\n"
                 "No channel set yet. Set a channel that new members must join.",
                 reply_markup=buttons
             )
@@ -652,7 +644,7 @@ Add me to groups and use /settings to configure! 😊"""
         junk_count = await clear_junk()
         await query.answer(f"🧹 Cleared {junk_count} junk entries!")
         await query.message.edit_text(
-            f"✅ **Junk Cleared!**\n\n"
+            f"✅ Junk Cleared!\n\n"
             f"Removed {junk_count} inactive entries from database.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 Refresh Stats", callback_data="refresh_stats")]
@@ -663,12 +655,12 @@ Add me to groups and use /settings to configure! 😊"""
         users = await get_user_count()
         groups = await get_group_count()
         
-        stats_text = f"""📊 **Bot Statistics**
+        stats_text = f"""📊 Bot Statistics
 
-👥 **Total Users:** {users}
-👥 **Total Groups:** {groups}
-⚡ **Bot Uptime:** 24/7
-🔄 **Last Updated:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+👥 Total Users: {users}
+👥 Total Groups: {groups}
+⚡ Bot Uptime: 24/7
+🔄 Last Updated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
         
         await query.message.edit_text(
             stats_text,
@@ -679,27 +671,30 @@ Add me to groups and use /settings to configure! 😊"""
         )
         await query.answer("✅ Stats refreshed!")
     
-    elif data.startswith("verify_"):
-        user_id = int(data.split("_")[1])
-        if query.from_user.id == user_id:
-            try:
-                # Unrestrict user
-                await client.unrestrict_chat_member(
-                    query.message.chat.id,
-                    user_id,
-                    permissions=dict(
-                        can_send_messages=True,
-                        can_send_media_messages=True,
-                        can_send_other_messages=True,
-                        can_add_web_page_previews=True
-                    )
+    elif data.startswith("unmute_"):
+        target_id = int(data.split("_")[1])
+        if user_id != target_id:
+            return await query.answer("Ye button apke liye nahi hai!", show_alert=True)
+            
+        # Re-check join status
+        fsub_data = await get_force_sub(chat_id)
+        channel_id = fsub_data["channel_id"]
+        try:
+            await client.get_chat_member(channel_id, user_id)
+            # Unmute user
+            await client.restrict_chat_member(
+                chat_id, user_id,
+                ChatPermissions(
+                    can_send_messages=True,
+                    can_send_media_messages=True,
+                    can_send_other_messages=True,
+                    can_add_web_page_previews=True
                 )
-                await query.answer("✅ Verified! Welcome to the group!")
-                await query.message.delete()
-            except:
-                await query.answer("❌ Verification failed!")
-        else:
-            await query.answer("❌ This button is not for you!")
+            )
+            await query.message.delete()
+            await query.answer("✅ Verified! You can chat now.")
+        except UserNotParticipant:
+            await query.answer("❌ Abhi bhi join nahi kiya!", show_alert=True)
     
     elif data == "ok_correction":
         await query.message.delete()
@@ -725,7 +720,7 @@ Add me to groups and use /settings to configure! 😊"""
         ])
         
         await query.message.edit_text(
-            f"⚙️ **Settings for {query.message.chat.title}**\n\n"
+            f"⚙️ Settings for {query.message.chat.title}\n\n"
             "Configure your group settings below:",
             reply_markup=buttons
         )
@@ -733,10 +728,10 @@ Add me to groups and use /settings to configure! 😊"""
     
     elif data == "set_fsub":
         await query.message.edit_text(
-            "🔗 **Set Force Subscribe Channel**\n\n"
+            "🔗 Set Force Subscribe Channel\n\n"
             "To set force subscribe channel:\n"
             "1. Forward any message from your channel\n"
-            "2. Reply to it with command: `/addfsub`\n\n"
+            "2. Reply to it with command: /addfsub\n\n"
             "Make sure I'm admin in that channel!",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔙 Back", callback_data="force_sub_menu")]
@@ -744,57 +739,7 @@ Add me to groups and use /settings to configure! 😊"""
         )
         await query.answer()
 
-# ================ GROUP EVENTS ================
-
-@app.on_message(filters.new_chat_members)
-async def welcome_new_members(client: Client, message: Message):
-    """Welcome new members and add group to database"""
-    for member in message.new_chat_members:
-        if member.is_self:  # Bot added to group
-            await add_group(
-                message.chat.id,
-                message.chat.title,
-                message.chat.username
-            )
-            
-            # Send welcome message to group
-            welcome_text = f"""🎬 **Thanks for adding me!** 🎬
-
-I'm Movie Helper Bot! Here's what I can do:
-
-✅ **Auto-correct movie names** (remove extra words)
-✅ **Auto-delete files** after set time
-✅ **Force subscribe** to your channel
-✅ **AI movie recommendations**
-✅ **Beautiful settings menu**
-
-**Setup Instructions:**
-1. Make me admin with delete permissions
-2. Use /settings to configure
-3. Set up force subscribe with /addfsub
-
-Need help? Use /help 😊"""
-            
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("⚙️ Settings", callback_data="settings_menu")],
-                [InlineKeyboardButton("📚 Help", callback_data="help_main")]
-            ])
-            
-            await message.reply_text(welcome_text, reply_markup=buttons)
-            
-            # Notify owner
-            if Config.OWNER_ID:
-                owner_msg = (
-                    f"🤖 **Bot Added to New Group!**\n\n"
-                    f"**Group:** {message.chat.title}\n"
-                    f"**ID:** `{message.chat.id}`\n"
-                    f"**Username:** @{message.chat.username or 'N/A'}\n"
-                    f"**Members:** {await client.get_chat_members_count(message.chat.id)}\n"
-                    f"**Added by:** {message.from_user.mention if message.from_user else 'Unknown'}"
-                )
-                try:
-                    await client.send_message(Config.OWNER_ID, owner_msg)
-                except:
-                    pass
-            
-            break  # Only need to handle bot addition once
+# ================ MAIN FUNCTION ================
+if __name__ == "__main__":
+    print("🚀 Starting Movie Helper Bot...")
+    app.run()
