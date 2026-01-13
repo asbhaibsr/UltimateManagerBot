@@ -1,5 +1,6 @@
 import motor.motor_asyncio
 import datetime
+from datetime import timedelta
 from config import Config
 
 # MongoDB connection
@@ -12,7 +13,7 @@ groups_col = db["groups"]
 settings_col = db["settings"]
 force_sub_col = db["force_sub"]
 
-# User Functions
+# ================ USER FUNCTIONS ================
 async def add_user(user_id, username=None, first_name=None, last_name=None):
     await users_col.update_one(
         {"_id": user_id},
@@ -46,17 +47,27 @@ async def ban_user(user_id):
 async def unban_user(user_id):
     await users_col.update_one({"_id": user_id}, {"$set": {"banned": False}})
 
-# Group Functions
+# ================ GROUP FUNCTIONS ================
 async def add_group(group_id, title=None, username=None):
+    # Check if group exists to preserve premium status
+    group = await groups_col.find_one({"_id": group_id})
+    
+    update_data = {
+        "title": title,
+        "username": username,
+        "active": True,
+        "updated_at": datetime.datetime.now()
+    }
+    
+    # Agar group naya hai to premium false set karo
+    if not group:
+        update_data["added_at"] = datetime.datetime.now()
+        update_data["is_premium"] = False
+        update_data["premium_expiry"] = None
+    
     await groups_col.update_one(
         {"_id": group_id},
-        {
-            "$set": {
-                "title": title,
-                "username": username,
-                "added_at": datetime.datetime.now()
-            }
-        },
+        {"$set": update_data},
         upsert=True
     )
 
@@ -75,11 +86,51 @@ async def get_group_count():
 async def remove_group(group_id):
     await groups_col.delete_one({"_id": group_id})
 
-# Settings Functions
+# ================ PREMIUM FUNCTIONS (NEW) ================
+async def add_premium(group_id, months):
+    expiry_date = datetime.datetime.now() + timedelta(days=30 * int(months))
+    await groups_col.update_one(
+        {"_id": group_id},
+        {
+            "$set": {
+                "is_premium": True,
+                "premium_expiry": expiry_date
+            }
+        },
+        upsert=True
+    )
+    return expiry_date
+
+async def remove_premium(group_id):
+    await groups_col.update_one(
+        {"_id": group_id},
+        {
+            "$set": {
+                "is_premium": False,
+                "premium_expiry": None
+            }
+        }
+    )
+
+async def check_is_premium(group_id):
+    group = await groups_col.find_one({"_id": group_id})
+    if not group:
+        return False
+    
+    if group.get("is_premium", False):
+        expiry = group.get("premium_expiry")
+        if expiry and expiry > datetime.datetime.now():
+            return True
+        else:
+            # Expired, remove status
+            await remove_premium(group_id)
+            return False
+    return False
+
+# ================ SETTINGS FUNCTIONS ================
 async def get_settings(chat_id):
     settings = await settings_col.find_one({"_id": chat_id})
     if not settings:
-        # Default settings create karo
         default_settings = {
             "_id": chat_id,
             "spelling_on": True,
@@ -91,7 +142,7 @@ async def get_settings(chat_id):
         try:
             await settings_col.insert_one(default_settings)
         except:
-            pass # Race condition handle
+            pass
         return default_settings
     return settings
 
@@ -102,7 +153,7 @@ async def update_settings(chat_id, key, value):
         upsert=True
     )
 
-# Force Subscribe Functions
+# ================ FORCE SUB FUNCTIONS ================
 async def set_force_sub(chat_id, channel_id):
     await force_sub_col.update_one(
         {"_id": chat_id},
@@ -116,7 +167,7 @@ async def get_force_sub(chat_id):
 async def remove_force_sub(chat_id):
     await force_sub_col.delete_one({"_id": chat_id})
 
-# Utility Functions
+# ================ UTILITY FUNCTIONS ================
 async def clear_junk():
     result = await users_col.delete_many({"banned": True})
     return result.deleted_count
