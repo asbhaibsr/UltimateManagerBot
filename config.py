@@ -11,32 +11,21 @@ class Config:
     
     # Bot Info
     BOT_USERNAME = os.getenv("BOT_USERNAME", "MovieBotProBot")
-    OWNER_ID = int(os.getenv("OWNER_ID", 0))
+    OWNER_ID = int(os.getenv("OWNER_ID", 7315805581))
     
     # Database
-    MONGO_DB_URL = os.getenv("MONGO_DB_URL", "")
-    
-    # Channels
-    LOG_CHANNEL = int(os.getenv("LOG_CHANNEL", 0))
-    
-    # Port for Koyeb/Heroku
-    PORT = int(os.getenv("PORT", 8000))
-    
-    # Premium Configuration
-    PREMIUM_PRICE_PER_MONTH = 50
-    AUTO_DELETE_MINUTES = 5
+    MONGO_DB_URL = os.getenv("MONGO_DB_URL", "mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority")
     
     # AI Configuration
-    AI_ENABLED = True
     G4F_MODEL = "gpt-3.5-turbo"
     
-    # Request Configuration
-    MAX_REQUESTS_PER_USER = 3
-    REQUEST_COOLDOWN = 60
+    # OMDb API Key (free)
+    OMDB_API_KEY = os.getenv("OMDB_API_KEY", "6ed172d8")
     
-    # OMDb API Key
-    OMDB_API_KEY = "6ed172d8"
-    TMDB_API_KEY = "e547e17d4e91f3e62a571655cd1ccaff"
+    # Additional Config
+    AUTO_DELETE_TIME = 500  # Seconds to auto-delete bot messages
+    BROADCAST_DELAY = 1  # Seconds between broadcasts to avoid flood
+    CHANNEL_ID = -1002283182645  # Logs channel
     
-    # Movie Search URLs
-    SEARCH_BOT_URL = "https://t.me/asfilter_bot"
+    # Force Sub Channel
+    FORCE_SUB_CHANNEL = os.getenv("FORCE_SUB_CHANNEL", "@asbhai_bsr")
