@@ -43,32 +43,38 @@ async def is_admin(chat_id, user_id):
 async def start_command(client: Client, message: Message):
     """Handle /start command"""
     user = message.from_user
+    
+    # Database me add karo
     await add_user(user.id, user.username, user.first_name)
     
-    welcome_text = f"""🎬 Welcome {user.first_name}! 🎬
+    # Log Channel me bhejo
+    if Config.LOGS_CHANNEL:
+        try:
+            log_text = (
+                f"🧑‍💻 **New User Started Bot**\n\n"
+                f"👤 Name: {user.mention}\n"
+                f"🆔 ID: `{user.id}`\n"
+                f"🔗 Username: @{user.username if user.username else 'N/A'}"
+            )
+            await client.send_message(Config.LOGS_CHANNEL, log_text)
+        except Exception as e:
+            logger.error(f"Log Error: {e}")
 
-I'm your Movie Helper Bot! 🤖
+    welcome_text = f"""🎬 Namaste {user.first_name}! 🎬
 
-Features:
-✅ Spelling Correction in Groups
+Main hoon apka Movie Helper Bot! 🤖
+
+**Features:**
+✅ Spelling Correction
 ✅ Auto Delete Files
 ✅ AI Movie Recommendations
-✅ Force Subscribe Channel
-✅ Broadcast Messages
-✅ Beautiful UI with Buttons
-
-Admin Commands:
-• /settings - Group settings
-• /stats - Bot statistics
-• /ai [query] - Ask AI anything
-• /addfsub - Set force subscribe
-• /broadcast - Broadcast to users
-• /grp_broadcast - Broadcast to groups
+💎 Premium Force Subscribe
 
 Add me to your groups and make me admin! 😊"""
     
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("➕ Add to Group", url=f"https://t.me/{Config.BOT_USERNAME}?startgroup=true")],
+        [InlineKeyboardButton("💎 Premium Plans", callback_data="premium_info")],
         [InlineKeyboardButton("📢 Updates Channel", url="https://t.me/asbhai_bsr")],
         [InlineKeyboardButton("🤖 Help", callback_data="help_main")]
     ])
@@ -80,39 +86,23 @@ Add me to your groups and make me admin! 😊"""
 @app.on_message(filters.command("help"))
 async def help_command(client: Client, message: Message):
     """Handle /help command"""
-    help_text = """🆘 Help Guide 🆘
+    help_text = """🆘 **Help Menu** 🆘
 
-For Group Admins:
-1. Add me to your group
-2. Make me admin with delete message permission
-3. Use /settings to configure
+**Group Admins ke liye:**
+1. Group me add karke Admin banao.
+2. /settings - Settings change karne ke liye.
+3. /addfsub - Force Subscribe set karne ke liye (Premium Only).
 
-Group Features:
-• Spelling Correction: Auto-corrects movie names
-• Auto Delete Files: Remove unwanted media
-• Force Subscribe: Force users to join channel
-• AI Chat: Ask about movies/series
+**Commands:**
+• /start - Start Bot
+• /ai [query] - Movie pucho
+• /ping - Check Status
+• /id - Get ID
 
-Commands List:
-• /start - Start the bot
-• /help - This message
-• /settings - Group settings (admin only)
-• /stats - Bot statistics
-• /ai [question] - Ask AI
-• /addfsub - Set force subscribe channel
-• /setcommands - Set bot commands
+**Premium Commands:**
+• /addfsub <channel_id> - Connect Channel
 
-Owner Commands:
-• /broadcast - Broadcast to users
-• /grp_broadcast - Broadcast to groups
-• /ban [user_id] - Ban user
-• /unban [user_id] - Unban user
-
-Utility Commands:
-• /ping - Check if bot is alive
-• /id - Get user/group ID
-
-Need help? Contact @asbhai_bsr 😊"""
+Contact Owner: @asbhai_bsr"""
     
     await message.reply_text(help_text)
     await MovieBotUtils.auto_delete_message(client, message)
@@ -121,7 +111,6 @@ Need help? Contact @asbhai_bsr 😊"""
 @app.on_message(filters.command("settings") & filters.group)
 async def settings_command(client: Client, message: Message):
     """Group settings menu"""
-    # Check if user is admin
     if not await is_admin(message.chat.id, message.from_user.id):
         msg = await message.reply_text("❌ Only Group Admins/Owner can use settings!")
         await asyncio.sleep(5)
@@ -129,26 +118,22 @@ async def settings_command(client: Client, message: Message):
         return
     
     settings = await get_settings(message.chat.id)
+    is_prem = await check_is_premium(message.chat.id)
+    prem_status = "💎 Active" if is_prem else "❌ Free"
     
-    # Create settings buttons
     spelling_status = "✅ ON" if settings.get("spelling_on", True) else "❌ OFF"
     delete_status = "✅ ON" if settings.get("auto_delete_on", False) else "❌ OFF"
-    delete_time = settings.get("delete_time", 0)
-    time_text = f"{delete_time} min" if delete_time > 0 else "Permanent"
+    time_text = f"{settings.get('delete_time', 0)} min" if settings.get('delete_time', 0) > 0 else "Permanent"
     
     buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"Spelling Correction: {spelling_status}", callback_data="toggle_spelling")],
-        [InlineKeyboardButton(f"Auto Delete Files: {delete_status}", callback_data="toggle_auto_delete")],
-        [InlineKeyboardButton(f"Delete Time: {time_text}", callback_data="set_delete_time")],
-        [InlineKeyboardButton("🔗 Force Subscribe", callback_data="force_sub_menu")],
+        [InlineKeyboardButton(f"Spelling: {spelling_status}", callback_data="toggle_spelling")],
+        [InlineKeyboardButton(f"Auto Delete: {delete_status}", callback_data="toggle_auto_delete")],
+        [InlineKeyboardButton(f"Time: {time_text}", callback_data="set_delete_time")],
+        [InlineKeyboardButton(f"Premium: {prem_status}", callback_data="premium_info")],
         [InlineKeyboardButton("❌ Close", callback_data="close_settings")]
     ])
     
-    await message.reply_text(
-        f"⚙️ Settings for {message.chat.title}\n\n"
-        "Configure your group settings below:",
-        reply_markup=buttons
-    )
+    await message.reply_text(f"⚙️ Settings for **{message.chat.title}**", reply_markup=buttons)
 
 # ================ STATS COMMAND ================
 @app.on_message(filters.command("stats") & filters.user(Config.OWNER_ID))
@@ -156,6 +141,13 @@ async def stats_command(client: Client, message: Message):
     """Bot statistics"""
     users = await get_user_count()
     groups = await get_group_count()
+    
+    # Premium groups count
+    premium_count = 0
+    all_grps = await get_all_groups()
+    for g in all_grps:
+        if await check_is_premium(g):
+            premium_count += 1
     
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("🧹 Clear Junk", callback_data="clear_junk")],
@@ -166,6 +158,7 @@ async def stats_command(client: Client, message: Message):
 
 👥 Total Users: {users}
 👥 Total Groups: {groups}
+💎 Premium Groups: {premium_count}
 ⚡ Bot Uptime: 24/7
 🔄 Last Updated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
@@ -185,7 +178,7 @@ async def ai_command(client: Client, message: Message):
         return
     
     query = ' '.join(message.command[1:])
-    waiting_msg = await message.reply_text("🤔 Thinking... Please wait!")
+    waiting_msg = await message.reply_text("🤔 Soch raha hu...")
     
     response = await MovieBotUtils.get_ai_response(query)
     
@@ -193,7 +186,7 @@ async def ai_command(client: Client, message: Message):
     await message.reply_text(response)
     await MovieBotUtils.auto_delete_message(client, message)
 
-# ================ BROADCAST COMMANDS ================
+# ================ BROADCAST COMMANDS (UPDATED WITH PREMIUM FILTER) ================
 @app.on_message(filters.command(["broadcast", "grp_broadcast"]) & filters.user(Config.OWNER_ID))
 async def broadcast_command(client: Client, message: Message):
     """Broadcast messages to users/groups"""
@@ -201,8 +194,19 @@ async def broadcast_command(client: Client, message: Message):
         await message.reply_text("❌ Please reply to a message to broadcast!")
         return
     
-    broadcast_type = "users" if "broadcast" in message.command else "groups"
-    target_ids = await get_all_users() if broadcast_type == "users" else await get_all_groups()
+    if "grp_broadcast" in message.text:
+        # Groups broadcast (Only to non-premium groups)
+        all_groups = await get_all_groups()
+        target_ids = []
+        # Filter: Don't send to Premium Groups
+        for grp_id in all_groups:
+            if not await check_is_premium(grp_id):
+                target_ids.append(grp_id)
+        broadcast_type = "groups"
+    else:
+        # Users broadcast
+        target_ids = await get_all_users()
+        broadcast_type = "users"
     
     if not target_ids:
         await message.reply_text(f"❌ No {broadcast_type} found!")
@@ -224,20 +228,26 @@ async def broadcast_command(client: Client, message: Message):
                     f"✅ Success: {success} | ❌ Failed: {failed}"
                 )
             await asyncio.sleep(Config.BROADCAST_DELAY)
+        except FloodWait as e:
+            await asyncio.sleep(e.value)
+            try:
+                await message.reply_to_message.copy(target_id)
+                success += 1
+            except:
+                failed += 1
         except Exception as e:
             failed += 1
             logger.error(f"Failed to send to {target_id}: {e}")
     
     await progress_msg.edit_text(
-        f"✅ Broadcast Complete!\n\n"
-        f"📊 Results:\n"
-        f"• Total {broadcast_type.capitalize()}: {len(target_ids)}\n"
-        f"• ✅ Successful: {success}\n"
-        f"• ❌ Failed: {failed}\n"
-        f"• 📈 Success Rate: {(success/len(target_ids)*100):.1f}%"
+        f"✅ **Broadcast Done!**\n\n"
+        f"Total {broadcast_type.capitalize()}: {len(target_ids)}\n"
+        f"✅ Success: {success}\n"
+        f"❌ Failed: {failed}\n"
+        f"📈 Success Rate: {(success/len(target_ids)*100):.1f}%"
     )
 
-# ================ ADDFSUB COMMAND ================
+# ================ ADDFSUB COMMAND (FIXED WITH PREMIUM CHECK) ================
 @app.on_message(filters.command("addfsub") & filters.group)
 async def addfsub_command(client: Client, message: Message):
     """Set force subscribe channel"""
@@ -247,31 +257,88 @@ async def addfsub_command(client: Client, message: Message):
         await msg.delete()
         return
 
-    if not message.reply_to_message:
-        return await message.reply_text("❌ Reply to a forwarded message from your channel!")
+    # Check Premium First
+    if not await check_is_premium(message.chat.id):
+        return await message.reply_text(
+            "💎 **Premium Feature!**\n\n"
+            "Force Subscribe use karne ke liye Premium lena padega.\n"
+            "Buy Premium: @asbhai_bsr",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Buy Premium", url="https://t.me/asbhai_bsr")]])
+        )
 
-    # Logic: Check forwarded chat
-    fwd_chat = message.reply_to_message.forward_from_chat
+    channel_id = None
     
-    if not fwd_chat or fwd_chat.type != "channel":
-         # Fallback if forward privacy is on
-        return await message.reply_text("❌ I cannot see the channel ID. Make sure 'Forwarding' is enabled in channel settings OR bot is admin in channel.")
+    # 1. Check commands arguments (e.g., /addfsub -100123456)
+    if len(message.command) > 1:
+        try:
+            channel_id = int(message.command[1])
+        except ValueError:
+            return await message.reply_text("❌ Invalid ID! Numeric ID daalo (e.g. -100...)")
 
-    channel_id = fwd_chat.id
-    channel_title = fwd_chat.title
+    # 2. Check reply forwarded message
+    elif message.reply_to_message:
+        if message.reply_to_message.forward_from_chat:
+            channel_id = message.reply_to_message.forward_from_chat.id
+        else:
+            return await message.reply_text("❌ Channel ID nahi mili. Forward privacy on hai. \nTry command: `/addfsub <channel_id>`")
+    else:
+        return await message.reply_text("❌ Usage:\n1. `/addfsub -100xxxx`\n2. Reply to channel message with `/addfsub`")
 
-    # Verify Bot is Admin in that Channel
+    # Verify Bot Admin in Channel
     try:
-        await client.get_chat_member(channel_id, (await client.get_me()).id)
-    except:
-        return await message.reply_text("❌ <b>Error:</b> I am not an Admin in that Channel! Please add me there first.")
+        chat = await client.get_chat(channel_id)
+        me = await client.get_chat_member(channel_id, (await client.get_me()).id)
+        if not me.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
+             return await message.reply_text("❌ Main us channel me Admin nahi hu!")
+    except Exception as e:
+        return await message.reply_text(f"❌ Error: Bot ko Channel me add karo aur Admin banao!\nError: {e}")
 
-    # Save to DB
     await set_force_sub(message.chat.id, channel_id)
-    await message.reply_text(f"✅ <b>Force Subscribe Connected!</b>\nLinked to: {channel_title}")
+    await message.reply_text(f"✅ **Force Subscribe Connected!**\n\nLinked to: {chat.title}")
+
+# ================ PREMIUM ADMIN COMMANDS ================
+@app.on_message(filters.command("add_premium") & filters.user(Config.OWNER_ID))
+async def add_premium_cmd(client: Client, message: Message):
+    try:
+        # /add_premium -100xxxx 1
+        _, group_id, months = message.text.split()
+        expiry = await add_premium(int(group_id), int(months))
+        
+        # Notify Admin
+        await message.reply_text(f"✅ **Premium Added!**\nGroup: `{group_id}`\nMonths: {months}\nExpires: {expiry}")
+        
+        # Notify Group
+        try:
+            await client.send_message(
+                int(group_id),
+                f"💎 **Premium Activated!** 💎\n\n✅ Ads Removed (No Broadcasts)\n✅ Force Subscribe Enabled (/addfsub)\n\nThank you for support! ❤️"
+            )
+        except:
+            await message.reply_text("⚠️ Database update hua par Group me msg nahi gaya (Bot kicked?)")
+            
+    except Exception as e:
+        await message.reply_text(f"❌ Usage: `/add_premium <group_id> <months>`\nError: {e}")
+
+@app.on_message(filters.command("remove_premium") & filters.user(Config.OWNER_ID))
+async def remove_premium_cmd(client: Client, message: Message):
+    try:
+        group_id = int(message.command[1])
+        await remove_premium(group_id)
+        await message.reply_text(f"❌ Premium removed for `{group_id}`")
+    except:
+        await message.reply_text("Usage: `/remove_premium <group_id>`")
+
+@app.on_message(filters.command("premiumstats") & filters.user(Config.OWNER_ID))
+async def premium_stats_cmd(client: Client, message: Message):
+    count = 0
+    all_grps = await get_all_groups()
+    for g in all_grps:
+        if await check_is_premium(g):
+            count += 1
+    await message.reply_text(f"💎 **Total Premium Groups:** {count}")
 
 # ================ MAIN FILTER (JUNK REMOVER) ================
-@app.on_message(filters.group & filters.text & ~filters.command(["start", "help", "settings", "addfsub", "stats", "ai", "broadcast", "grp_broadcast", "setcommands", "ping", "id", "ban", "unban"]))
+@app.on_message(filters.group & filters.text & ~filters.command(["start", "help", "settings", "addfsub", "stats", "ai", "broadcast", "grp_broadcast", "setcommands", "ping", "id", "ban", "unban", "add_premium", "remove_premium", "premiumstats"]))
 async def group_message_filter(client, message):
     # 1. Ignore Admins/Owner (Unko kuch bhi likhne do)
     if await is_admin(message.chat.id, message.from_user.id):
@@ -298,8 +365,7 @@ async def group_message_filter(client, message):
             print(f"Delete Error: {e}")
             
     elif quality == "CLEAN":
-        # Message is clean. Let it stay. 
-        # Yahan tum apna Auto-Reply logic laga sakte ho agar chaho.
+        # Message is clean. Let it stay.
         pass
 
 # ================ AUTO DELETE FILES ================
@@ -392,53 +458,26 @@ async def callback_handler(client: Client, query: CallbackQuery):
     chat_id = query.message.chat.id if query.message else query.from_user.id
     user_id = query.from_user.id
     
-    if data == "help_main":
-        help_text = """🆘 Help Menu 🆘
+    if data == "premium_info":
+        text = """💎 **Premium Plans** 💎
 
-Main Features:
-• 🎬 Movie recommendations
-• ✨ Spelling correction
-• 🗑️ Auto delete files
-• 🔗 Force subscribe
-• 🤖 AI chat
+💸 **Pricing:**
+• 1 Month: ₹100
+• 2 Months: ₹200
+• Lifetime: ₹500
 
-Quick Commands:
-/start - Start bot
-/help - Detailed help
-/settings - Group settings
-/ai - Ask AI anything
+🔥 **Benefits:**
+1. 🔇 No Broadcast Messages (Ads Free)
+2. 🔗 Force Subscribe Feature Access
+3. ⚡ Priority Support
 
-Need more help?
-Contact: @asbhai_bsr"""
-        
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Back to Start", callback_data="back_to_start")],
-            [InlineKeyboardButton("⚙️ Group Settings", url=f"https://t.me/{Config.BOT_USERNAME}?startgroup=true")]
-        ])
-        
-        await query.message.edit_text(help_text, reply_markup=buttons)
+Buy karne ke liye owner se contact karein: @asbhai_bsr"""
+        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="help_main")]]))
         await query.answer()
     
-    elif data == "back_to_start":
-        welcome_text = f"""🎬 Welcome! 🎬
-
-I'm your Movie Helper Bot! 🤖
-
-Features:
-✅ Spelling Correction in Groups
-✅ Auto Delete Files
-✅ AI Movie Recommendations
-✅ Force Subscribe Channel
-
-Add me to groups and use /settings to configure! 😊"""
-        
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("➕ Add to Group", url=f"https://t.me/{Config.BOT_USERNAME}?startgroup=true")],
-            [InlineKeyboardButton("📢 Updates Channel", url="https://t.me/asbhai_bsr")],
-            [InlineKeyboardButton("🤖 Help", callback_data="help_main")]
-        ])
-        
-        await query.message.edit_text(welcome_text, reply_markup=buttons)
+    elif data == "help_main":
+        await query.message.delete()
+        await help_command(client, query.message)
         await query.answer()
     
     elif data == "toggle_spelling":
@@ -447,12 +486,15 @@ Add me to groups and use /settings to configure! 😊"""
         await update_settings(chat_id, "spelling_on", new_value)
         
         status = "✅ ON" if new_value else "❌ OFF"
+        is_prem = await check_is_premium(chat_id)
+        prem_status = "💎 Active" if is_prem else "❌ Free"
+        
         await query.message.edit_reply_markup(
             InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"Spelling Correction: {status}", callback_data="toggle_spelling")],
-                [InlineKeyboardButton(f"Auto Delete Files: {'✅ ON' if settings.get('auto_delete_on', False) else '❌ OFF'}", callback_data="toggle_auto_delete")],
-                [InlineKeyboardButton(f"Delete Time: {settings.get('delete_time', 0)} min", callback_data="set_delete_time")],
-                [InlineKeyboardButton("🔗 Force Subscribe", callback_data="force_sub_menu")],
+                [InlineKeyboardButton(f"Spelling: {status}", callback_data="toggle_spelling")],
+                [InlineKeyboardButton(f"Auto Delete: {'✅ ON' if settings.get('auto_delete_on', False) else '❌ OFF'}", callback_data="toggle_auto_delete")],
+                [InlineKeyboardButton(f"Time: {settings.get('delete_time', 0)} min", callback_data="set_delete_time")],
+                [InlineKeyboardButton(f"Premium: {prem_status}", callback_data="premium_info")],
                 [InlineKeyboardButton("❌ Close", callback_data="close_settings")]
             ])
         )
@@ -464,12 +506,15 @@ Add me to groups and use /settings to configure! 😊"""
         await update_settings(chat_id, "auto_delete_on", new_value)
         
         status = "✅ ON" if new_value else "❌ OFF"
+        is_prem = await check_is_premium(chat_id)
+        prem_status = "💎 Active" if is_prem else "❌ Free"
+        
         await query.message.edit_reply_markup(
             InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"Spelling Correction: {'✅ ON' if settings.get('spelling_on', True) else '❌ OFF'}", callback_data="toggle_spelling")],
-                [InlineKeyboardButton(f"Auto Delete Files: {status}", callback_data="toggle_auto_delete")],
-                [InlineKeyboardButton(f"Delete Time: {settings.get('delete_time', 0)} min", callback_data="set_delete_time")],
-                [InlineKeyboardButton("🔗 Force Subscribe", callback_data="force_sub_menu")],
+                [InlineKeyboardButton(f"Spelling: {'✅ ON' if settings.get('spelling_on', True) else '❌ OFF'}", callback_data="toggle_spelling")],
+                [InlineKeyboardButton(f"Auto Delete: {status}", callback_data="toggle_auto_delete")],
+                [InlineKeyboardButton(f"Time: {settings.get('delete_time', 0)} min", callback_data="set_delete_time")],
+                [InlineKeyboardButton(f"Premium: {prem_status}", callback_data="premium_info")],
                 [InlineKeyboardButton("❌ Close", callback_data="close_settings")]
             ])
         )
@@ -496,22 +541,24 @@ Add me to groups and use /settings to configure! 😊"""
         
         # Go back to settings
         settings = await get_settings(chat_id)
+        is_prem = await check_is_premium(chat_id)
+        prem_status = "💎 Active" if is_prem else "❌ Free"
+        
         spelling_status = "✅ ON" if settings.get("spelling_on", True) else "❌ OFF"
         delete_status = "✅ ON" if settings.get("auto_delete_on", False) else "❌ OFF"
         delete_time = minutes
         time_text = f"{delete_time} min" if delete_time > 0 else "Permanent"
         
         buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"Spelling Correction: {spelling_status}", callback_data="toggle_spelling")],
-            [InlineKeyboardButton(f"Auto Delete Files: {delete_status}", callback_data="toggle_auto_delete")],
-            [InlineKeyboardButton(f"Delete Time: {time_text}", callback_data="set_delete_time")],
-            [InlineKeyboardButton("🔗 Force Subscribe", callback_data="force_sub_menu")],
+            [InlineKeyboardButton(f"Spelling: {spelling_status}", callback_data="toggle_spelling")],
+            [InlineKeyboardButton(f"Auto Delete: {delete_status}", callback_data="toggle_auto_delete")],
+            [InlineKeyboardButton(f"Time: {time_text}", callback_data="set_delete_time")],
+            [InlineKeyboardButton(f"Premium: {prem_status}", callback_data="premium_info")],
             [InlineKeyboardButton("❌ Close", callback_data="close_settings")]
         ])
         
         await query.message.edit_text(
-            f"⚙️ Settings for {query.message.chat.title}\n\n"
-            "Configure your group settings below:",
+            f"⚙️ Settings for {query.message.chat.title}",
             reply_markup=buttons
         )
     
@@ -576,10 +623,18 @@ Add me to groups and use /settings to configure! 😊"""
         users = await get_user_count()
         groups = await get_group_count()
         
+        # Premium groups count
+        premium_count = 0
+        all_grps = await get_all_groups()
+        for g in all_grps:
+            if await check_is_premium(g):
+                premium_count += 1
+        
         stats_text = f"""📊 Bot Statistics
 
 👥 Total Users: {users}
 👥 Total Groups: {groups}
+💎 Premium Groups: {premium_count}
 ⚡ Bot Uptime: 24/7
 🔄 Last Updated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
         
@@ -626,22 +681,24 @@ Add me to groups and use /settings to configure! 😊"""
     
     elif data == "back_settings":
         settings = await get_settings(chat_id)
+        is_prem = await check_is_premium(chat_id)
+        prem_status = "💎 Active" if is_prem else "❌ Free"
+        
         spelling_status = "✅ ON" if settings.get("spelling_on", True) else "❌ OFF"
         delete_status = "✅ ON" if settings.get("auto_delete_on", False) else "❌ OFF"
         delete_time = settings.get("delete_time", 0)
         time_text = f"{delete_time} min" if delete_time > 0 else "Permanent"
         
         buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"Spelling Correction: {spelling_status}", callback_data="toggle_spelling")],
-            [InlineKeyboardButton(f"Auto Delete Files: {delete_status}", callback_data="toggle_auto_delete")],
-            [InlineKeyboardButton(f"Delete Time: {time_text}", callback_data="set_delete_time")],
-            [InlineKeyboardButton("🔗 Force Subscribe", callback_data="force_sub_menu")],
+            [InlineKeyboardButton(f"Spelling: {spelling_status}", callback_data="toggle_spelling")],
+            [InlineKeyboardButton(f"Auto Delete: {delete_status}", callback_data="toggle_auto_delete")],
+            [InlineKeyboardButton(f"Time: {time_text}", callback_data="set_delete_time")],
+            [InlineKeyboardButton(f"Premium: {prem_status}", callback_data="premium_info")],
             [InlineKeyboardButton("❌ Close", callback_data="close_settings")]
         ])
         
         await query.message.edit_text(
-            f"⚙️ Settings for {query.message.chat.title}\n\n"
-            "Configure your group settings below:",
+            f"⚙️ Settings for {query.message.chat.title}",
             reply_markup=buttons
         )
         await query.answer()
@@ -665,51 +722,36 @@ async def welcome_new_members(client: Client, message: Message):
     """Welcome new members and add group to database"""
     for member in message.new_chat_members:
         if member.is_self:  # Bot added to group
-            await add_group(
-                message.chat.id,
-                message.chat.title,
-                message.chat.username
+            # Bot added to group
+            await add_group(message.chat.id, message.chat.title, message.chat.username)
+            
+            # Send Welcome
+            await message.reply_text(
+                f"🎬 Thanks for adding me to **{message.chat.title}**!\n\nUse /settings to setup.\nMake me Admin first!",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⚙️ Settings", callback_data="settings_menu")]])
             )
             
-            # Send welcome message to group
-            welcome_text = f"""🎬 Thanks for adding me! 🎬
-
-I'm Movie Helper Bot! Here's what I can do:
-
-✅ Auto-correct movie names (remove extra words)
-✅ Auto-delete files after set time
-✅ Force subscribe to your channel
-✅ AI movie recommendations
-✅ Beautiful settings menu
-
-Setup Instructions:
-1. Make me admin with delete permissions
-2. Use /settings to configure
-3. Set up force subscribe with /addfsub
-
-Need help? Use /help 😊"""
-            
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("⚙️ Settings", callback_data="settings_menu")],
-                [InlineKeyboardButton("📚 Help", callback_data="help_main")]
-            ])
-            
-            await message.reply_text(welcome_text, reply_markup=buttons)
-            
-            # Notify owner
-            if Config.OWNER_ID:
-                owner_msg = (
-                    f"🤖 Bot Added to New Group!\n\n"
-                    f"Group: {message.chat.title}\n"
-                    f"ID: {message.chat.id}\n"
-                    f"Username: @{message.chat.username or 'N/A'}\n"
-                    f"Members: {await client.get_chat_members_count(message.chat.id)}\n"
-                    f"Added by: {message.from_user.mention if message.from_user else 'Unknown'}"
+            # LOGS + INVITE LINK
+            if Config.LOGS_CHANNEL:
+                invite_link = "N/A"
+                try:
+                    link_obj = await client.export_chat_invite_link(message.chat.id)
+                    invite_link = link_obj
+                except:
+                    invite_link = "Bot needs Admin to generate link"
+                
+                log_txt = (
+                    f"📂 **Bot Added to Group**\n\n"
+                    f"📛 Name: {message.chat.title}\n"
+                    f"🆔 ID: `{message.chat.id}`\n"
+                    f"👥 Members: {await client.get_chat_members_count(message.chat.id)}\n"
+                    f"🔗 Link: {invite_link}\n"
+                    f"👤 Added By: {message.from_user.mention if message.from_user else 'Unknown'}"
                 )
                 try:
-                    await client.send_message(Config.OWNER_ID, owner_msg)
-                except:
-                    pass
+                    await client.send_message(Config.LOGS_CHANNEL, log_txt)
+                except Exception as e:
+                    logger.error(f"Log Error: {e}")
             
             break  # Only need to handle bot addition once
 
@@ -723,7 +765,9 @@ async def setcommands_command(client: Client, message: Message):
         {"command": "settings", "description": "Group settings"},
         {"command": "stats", "description": "Bot statistics"},
         {"command": "ai", "description": "Ask AI about movies"},
-        {"command": "addfsub", "description": "Set force subscribe"}
+        {"command": "addfsub", "description": "Set force subscribe (Premium)"},
+        {"command": "ping", "description": "Check bot status"},
+        {"command": "id", "description": "Get user/group ID"}
     ]
     
     try:
@@ -751,10 +795,10 @@ async def id_command(client: Client, message: Message):
     chat_id = message.chat.id
     user_id = message.from_user.id
     
-    text = f"👤 Your ID: {user_id}\n"
+    text = f"👤 Your ID: `{user_id}`\n"
     
     if message.chat.type != "private":
-        text += f"👥 Group ID: {chat_id}\n"
+        text += f"👥 Group ID: `{chat_id}`\n"
         text += f"📝 Group Title: {message.chat.title}\n"
     
     await message.reply_text(text)
@@ -770,7 +814,7 @@ async def ban_command(client: Client, message: Message):
     try:
         user_id = int(message.command[1])
         await ban_user(user_id)
-        await message.reply_text(f"✅ User {user_id} banned successfully!")
+        await message.reply_text(f"✅ User `{user_id}` banned successfully!")
     except ValueError:
         await message.reply_text("❌ Invalid user ID!")
 
@@ -784,7 +828,7 @@ async def unban_command(client: Client, message: Message):
     try:
         user_id = int(message.command[1])
         await unban_user(user_id)
-        await message.reply_text(f"✅ User {user_id} unbanned successfully!")
+        await message.reply_text(f"✅ User `{user_id}` unbanned successfully!")
     except ValueError:
         await message.reply_text("❌ Invalid user ID!")
 
