@@ -30,4 +30,4 @@ class Config:
     FORCE_SUB_CHANNEL = os.getenv("FORCE_SUB_CHANNEL", "@asbhai_bsr")
     
     # Logs Channel
-    LOGS_CHANNEL = int(os.getenv("LOGS_CHANNEL", -1002352329534)
+    LOGS_CHANNEL = int(os.getenv("LOGS_CHANNEL", -1002352329534))
