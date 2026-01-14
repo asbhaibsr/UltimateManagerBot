@@ -1,3 +1,5 @@
+# database.py
+
 import motor.motor_asyncio
 import datetime
 from datetime import timedelta
@@ -88,6 +90,7 @@ async def remove_group(group_id):
 
 # ================ PREMIUM FUNCTIONS (NEW) ================
 async def add_premium(group_id, months):
+    # Calculate expiry date
     expiry_date = datetime.datetime.now() + timedelta(days=30 * int(months))
     await groups_col.update_one(
         {"_id": group_id},
@@ -119,10 +122,11 @@ async def check_is_premium(group_id):
     
     if group.get("is_premium", False):
         expiry = group.get("premium_expiry")
+        # Check if expired
         if expiry and expiry > datetime.datetime.now():
             return True
         else:
-            # Expired, remove status
+            # Expired, remove status automatically
             await remove_premium(group_id)
             return False
     return False
