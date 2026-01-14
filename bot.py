@@ -1,6 +1,9 @@
+#  bot.py
+
 import asyncio
 import logging
 import time
+import re
 from pyrogram import Client, filters, idle
 from pyrogram.enums import ChatMemberStatus, ChatType
 from pyrogram.types import (
@@ -296,13 +299,31 @@ async def addfsub_command(client: Client, message: Message):
     await set_force_sub(message.chat.id, channel_id)
     await message.reply_text(f"✅ **Force Subscribe Connected!**\n\nLinked to: {chat.title}")
 
-# ================ PREMIUM ADMIN COMMANDS ================
+# ================ PREMIUM ADMIN COMMANDS (FIXED HERE) ================
 @app.on_message(filters.command("add_premium") & filters.user(Config.OWNER_ID))
 async def add_premium_cmd(client: Client, message: Message):
     try:
-        # /add_premium -100xxxx 1
-        _, group_id, months = message.text.split()
-        expiry = await add_premium(int(group_id), int(months))
+        # Check command length
+        if len(message.command) < 3:
+             await message.reply_text("❌ Usage: `/add_premium <group_id> <months>`\nExample: `/add_premium -100123456 1`")
+             return
+
+        # Safe extraction
+        group_id = int(message.command[1])
+        
+        # Handle cases like "1month", "1", "2months"
+        # Isse sirf digits nikal kar int banayenge
+        raw_months = message.command[2].lower()
+        # Remove non-digit chars
+        clean_months = ''.join(filter(str.isdigit, raw_months))
+        
+        if not clean_months:
+             await message.reply_text("❌ Error: Invalid month format. Use numbers like 1, 6, 12")
+             return
+             
+        months = int(clean_months)
+        
+        expiry = await add_premium(group_id, months)
         
         # Notify Admin
         await message.reply_text(f"✅ **Premium Added!**\nGroup: `{group_id}`\nMonths: {months}\nExpires: {expiry}")
@@ -310,23 +331,31 @@ async def add_premium_cmd(client: Client, message: Message):
         # Notify Group
         try:
             await client.send_message(
-                int(group_id),
+                group_id,
                 f"💎 **Premium Activated!** 💎\n\n✅ Ads Removed (No Broadcasts)\n✅ Force Subscribe Enabled (/addfsub)\n\nThank you for support! ❤️"
             )
         except:
             await message.reply_text("⚠️ Database update hua par Group me msg nahi gaya (Bot kicked?)")
             
+    except ValueError:
+         await message.reply_text("❌ Error: ID or Month sahi number nahi hai.")
     except Exception as e:
-        await message.reply_text(f"❌ Usage: `/add_premium <group_id> <months>`\nError: {e}")
+        await message.reply_text(f"❌ Error: {e}")
 
 @app.on_message(filters.command("remove_premium") & filters.user(Config.OWNER_ID))
 async def remove_premium_cmd(client: Client, message: Message):
     try:
+        if len(message.command) < 2:
+            await message.reply_text("❌ Usage: `/remove_premium <group_id>`")
+            return
+            
         group_id = int(message.command[1])
         await remove_premium(group_id)
         await message.reply_text(f"❌ Premium removed for `{group_id}`")
-    except:
-        await message.reply_text("Usage: `/remove_premium <group_id>`")
+    except ValueError:
+        await message.reply_text("❌ Error: Invalid Group ID (Must be a number)")
+    except Exception as e:
+        await message.reply_text(f"❌ Error: {e}")
 
 @app.on_message(filters.command("premiumstats") & filters.user(Config.OWNER_ID))
 async def premium_stats_cmd(client: Client, message: Message):
@@ -736,7 +765,7 @@ async def welcome_new_members(client: Client, message: Message):
                 invite_link = "N/A"
                 try:
                     link_obj = await client.export_chat_invite_link(message.chat.id)
-                    invite_link = link_obj
+                    invite_link = link_obj.invite_link
                 except:
                     invite_link = "Bot needs Admin to generate link"
                 
