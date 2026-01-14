@@ -1,9 +1,8 @@
-#  bot.py
-
 import asyncio
 import logging
 import time
 import re
+import datetime
 from pyrogram import Client, filters, idle
 from pyrogram.enums import ChatMemberStatus, ChatType
 from pyrogram.types import (
@@ -366,7 +365,7 @@ async def premium_stats_cmd(client: Client, message: Message):
             count += 1
     await message.reply_text(f"💎 **Total Premium Groups:** {count}")
 
-# ================ MAIN FILTER (JUNK REMOVER) ================
+# ================ MAIN FILTER (UPDATED WITH LINK & ABUSE DETECTION) ================
 @app.on_message(filters.group & filters.text & ~filters.command(["start", "help", "settings", "addfsub", "stats", "ai", "broadcast", "grp_broadcast", "setcommands", "ping", "id", "ban", "unban", "add_premium", "remove_premium", "premiumstats"]))
 async def group_message_filter(client, message):
     # 1. Ignore Admins/Owner (Unko kuch bhi likhne do)
@@ -393,6 +392,22 @@ async def group_message_filter(client, message):
         except Exception as e:
             print(f"Delete Error: {e}")
             
+    elif quality == "LINK":
+        try:
+            await message.delete()
+            warn = await message.reply_text(f"🚫 {message.from_user.mention}, Links allowed nahi hain!")
+            await MovieBotUtils.auto_delete_message(client, warn, 5)
+        except Exception as e:
+            print(f"Link Delete Error: {e}")
+
+    elif quality == "ABUSE":
+        try:
+            await message.delete()
+            warn = await message.reply_text(f"🚫 {message.from_user.mention}, Tameez se baat karo! (Abuse Detected)")
+            await MovieBotUtils.auto_delete_message(client, warn, 5)
+        except Exception as e:
+            print(f"Abuse Delete Error: {e}")
+
     elif quality == "CLEAN":
         # Message is clean. Let it stay.
         pass
