@@ -7,7 +7,7 @@ from pyrogram import Client, filters, idle
 from pyrogram.enums import ChatMemberStatus, ChatType
 from pyrogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton, 
-    CallbackQuery, ChatMemberUpdated, ChatPermissions
+    CallbackQuery, ChatMemberUpdated, ChatPermissions, ChatJoinRequest
 )
 from pyrogram.errors import FloodWait, UserNotParticipant, ChatAdminRequired
 from config import Config
@@ -29,6 +29,9 @@ app = Client(
     bot_token=Config.BOT_TOKEN,
     in_memory=True
 )
+
+# Cache for Force Sub to prevent double messages
+fsub_cache = []
 
 # ================ HELPER FUNCTIONS ================
 async def is_admin(chat_id, user_id):
@@ -70,6 +73,8 @@ Main hoon apka Movie Helper Bot! 🤖
 ✅ Spelling Correction
 ✅ Auto Delete Files
 ✅ AI Movie Recommendations
+⚡ Auto Accept Requests
+🛡️ Abuse/Link Protection
 💎 Premium Force Subscribe
 
 Add me to your groups and make me admin! 😊"""
@@ -92,11 +97,12 @@ async def help_command(client: Client, message: Message):
 
 **Group Admins ke liye:**
 1. Group me add karke Admin banao.
-2. /settings - Settings change karne ke liye.
+2. /settings - Settings change karne ke liye (Auto Accept, Spelling etc).
 3. /addfsub - Force Subscribe set karne ke liye (Premium Only).
 
 **Commands:**
 • /start - Start Bot
+• /request <movie> - Movie maangne ke liye
 • /ai [query] - Movie pucho
 • /ping - Check Status
 • /id - Get ID
@@ -121,21 +127,52 @@ async def settings_command(client: Client, message: Message):
     
     settings = await get_settings(message.chat.id)
     is_prem = await check_is_premium(message.chat.id)
-    prem_status = "💎 Active" if is_prem else "❌ Free"
+    auto_accept = await get_auto_accept(message.chat.id)
     
+    prem_status = "💎 Active" if is_prem else "❌ Free"
     spelling_status = "✅ ON" if settings.get("spelling_on", True) else "❌ OFF"
     delete_status = "✅ ON" if settings.get("auto_delete_on", False) else "❌ OFF"
+    accept_status = "✅ ON" if auto_accept else "❌ OFF"
     time_text = f"{settings.get('delete_time', 0)} min" if settings.get('delete_time', 0) > 0 else "Permanent"
     
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton(f"Spelling: {spelling_status}", callback_data="toggle_spelling")],
         [InlineKeyboardButton(f"Auto Delete: {delete_status}", callback_data="toggle_auto_delete")],
+        [InlineKeyboardButton(f"Auto Accept: {accept_status}", callback_data="toggle_auto_accept")],
         [InlineKeyboardButton(f"Time: {time_text}", callback_data="set_delete_time")],
         [InlineKeyboardButton(f"Premium: {prem_status}", callback_data="premium_info")],
         [InlineKeyboardButton("❌ Close", callback_data="close_settings")]
     ])
     
     await message.reply_text(f"⚙️ Settings for **{message.chat.title}**", reply_markup=buttons)
+
+# ================ REQUEST HANDLER ================
+@app.on_message(filters.command("request") & filters.group)
+async def request_handler(client: Client, message: Message):
+    if len(message.command) < 2:
+        return await message.reply_text("❌ Movie ka naam to likho!\nExample: `/request Pushpa 2`")
+    
+    movie_name = " ".join(message.command[1:])
+    user = message.from_user
+    chat = message.chat
+    
+    # Tag Admins (Design)
+    text = (
+        f"🔔 **New Request!**\n\n"
+        f"👤 **User:** {user.mention}\n"
+        f"🎬 **Movie:** `{movie_name}`\n"
+        f"📍 **Group:** {chat.title}"
+    )
+    
+    buttons = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Available", callback_data=f"req_accept_{user.id}"),
+            InlineKeyboardButton("❌ Reject", callback_data=f"req_reject_{user.id}")
+        ]
+    ])
+    
+    # Send to SAME Group
+    await message.reply_text(text, reply_markup=buttons)
 
 # ================ STATS COMMAND ================
 @app.on_message(filters.command("stats") & filters.user(Config.OWNER_ID))
@@ -188,68 +225,46 @@ async def ai_command(client: Client, message: Message):
     await message.reply_text(response)
     await MovieBotUtils.auto_delete_message(client, message)
 
-# ================ BROADCAST COMMANDS (UPDATED WITH PREMIUM FILTER) ================
+# ================ BROADCAST COMMAND (AUTO CLEAN JUNK) ================
 @app.on_message(filters.command(["broadcast", "grp_broadcast"]) & filters.user(Config.OWNER_ID))
 async def broadcast_command(client: Client, message: Message):
-    """Broadcast messages to users/groups"""
     if not message.reply_to_message:
-        await message.reply_text("❌ Please reply to a message to broadcast!")
-        return
+        return await message.reply_text("❌ Reply to a message!")
     
-    if "grp_broadcast" in message.text:
-        # Groups broadcast (Only to non-premium groups)
-        all_groups = await get_all_groups()
-        target_ids = []
-        # Filter: Don't send to Premium Groups
-        for grp_id in all_groups:
-            if not await check_is_premium(grp_id):
-                target_ids.append(grp_id)
-        broadcast_type = "groups"
-    else:
-        # Users broadcast
-        target_ids = await get_all_users()
-        broadcast_type = "users"
+    is_group = "grp_broadcast" in message.text
+    target_ids = await get_all_groups() if is_group else await get_all_users()
     
-    if not target_ids:
-        await message.reply_text(f"❌ No {broadcast_type} found!")
-        return
+    # Premium Filter for Groups (Don't broadcast to Premium)
+    if is_group:
+        target_ids = [g for g in target_ids if not await check_is_premium(g)]
+
+    progress = await message.reply_text(f"🚀 Broadcasting to {len(target_ids)} chats...")
+    success, failed, deleted = 0, 0, 0
     
-    progress_msg = await message.reply_text(f"📤 Broadcasting to {len(target_ids)} {broadcast_type}...\nProgress: 0/{len(target_ids)}")
-    
-    success = 0
-    failed = 0
-    
-    for idx, target_id in enumerate(target_ids, 1):
+    for id in target_ids:
         try:
-            await message.reply_to_message.copy(target_id)
+            await message.reply_to_message.copy(id)
             success += 1
-            if idx % 10 == 0:  # Update progress every 10 sends
-                await progress_msg.edit_text(
-                    f"📤 Broadcasting to {len(target_ids)} {broadcast_type}...\n"
-                    f"Progress: {idx}/{len(target_ids)}\n"
-                    f"✅ Success: {success} | ❌ Failed: {failed}"
-                )
-            await asyncio.sleep(Config.BROADCAST_DELAY)
-        except FloodWait as e:
-            await asyncio.sleep(e.value)
-            try:
-                await message.reply_to_message.copy(target_id)
-                success += 1
-            except:
-                failed += 1
         except Exception as e:
+            # Agar bot block hai ya kick hai to DB se hata do
+            if "PeerIdInvalid" in str(e) or "UserDeactivated" in str(e) or "ChannelPrivate" in str(e) or "ChatWriteForbidden" in str(e):
+                if is_group:
+                    await remove_group(id) # Assuming this function exists in database.py
+                else:
+                    pass # User removal logic
+                deleted += 1
             failed += 1
-            logger.error(f"Failed to send to {target_id}: {e}")
-    
-    await progress_msg.edit_text(
-        f"✅ **Broadcast Done!**\n\n"
-        f"Total {broadcast_type.capitalize()}: {len(target_ids)}\n"
+        await asyncio.sleep(0.5)
+        
+    await progress.edit_text(
+        f"✅ Broadcast Complete!\n\n"
+        f"🎯 Total: {len(target_ids)}\n"
         f"✅ Success: {success}\n"
         f"❌ Failed: {failed}\n"
-        f"📈 Success Rate: {(success/len(target_ids)*100):.1f}%"
+        f"🗑️ Cleaned Junk: {deleted}"
     )
 
-# ================ ADDFSUB COMMAND (FIXED WITH PREMIUM CHECK) ================
+# ================ ADDFSUB COMMAND ================
 @app.on_message(filters.command("addfsub") & filters.group)
 async def addfsub_command(client: Client, message: Message):
     """Set force subscribe channel"""
@@ -270,14 +285,12 @@ async def addfsub_command(client: Client, message: Message):
 
     channel_id = None
     
-    # 1. Check commands arguments (e.g., /addfsub -100123456)
     if len(message.command) > 1:
         try:
             channel_id = int(message.command[1])
         except ValueError:
             return await message.reply_text("❌ Invalid ID! Numeric ID daalo (e.g. -100...)")
 
-    # 2. Check reply forwarded message
     elif message.reply_to_message:
         if message.reply_to_message.forward_from_chat:
             channel_id = message.reply_to_message.forward_from_chat.id
@@ -286,7 +299,6 @@ async def addfsub_command(client: Client, message: Message):
     else:
         return await message.reply_text("❌ Usage:\n1. `/addfsub -100xxxx`\n2. Reply to channel message with `/addfsub`")
 
-    # Verify Bot Admin in Channel
     try:
         chat = await client.get_chat(channel_id)
         me = await client.get_chat_member(channel_id, (await client.get_me()).id)
@@ -298,46 +310,35 @@ async def addfsub_command(client: Client, message: Message):
     await set_force_sub(message.chat.id, channel_id)
     await message.reply_text(f"✅ **Force Subscribe Connected!**\n\nLinked to: {chat.title}")
 
-# ================ PREMIUM ADMIN COMMANDS (FIXED HERE) ================
+# ================ PREMIUM ADMIN COMMANDS ================
 @app.on_message(filters.command("add_premium") & filters.user(Config.OWNER_ID))
 async def add_premium_cmd(client: Client, message: Message):
     try:
-        # Check command length
         if len(message.command) < 3:
-             await message.reply_text("❌ Usage: `/add_premium <group_id> <months>`\nExample: `/add_premium -100123456 1`")
+             await message.reply_text("❌ Usage: `/add_premium <group_id> <months>`")
              return
 
-        # Safe extraction
         group_id = int(message.command[1])
-        
-        # Handle cases like "1month", "1", "2months"
-        # Isse sirf digits nikal kar int banayenge
         raw_months = message.command[2].lower()
-        # Remove non-digit chars
         clean_months = ''.join(filter(str.isdigit, raw_months))
         
         if not clean_months:
-             await message.reply_text("❌ Error: Invalid month format. Use numbers like 1, 6, 12")
+             await message.reply_text("❌ Error: Invalid month format.")
              return
              
         months = int(clean_months)
-        
         expiry = await add_premium(group_id, months)
         
-        # Notify Admin
         await message.reply_text(f"✅ **Premium Added!**\nGroup: `{group_id}`\nMonths: {months}\nExpires: {expiry}")
         
-        # Notify Group
         try:
             await client.send_message(
                 group_id,
-                f"💎 **Premium Activated!** 💎\n\n✅ Ads Removed (No Broadcasts)\n✅ Force Subscribe Enabled (/addfsub)\n\nThank you for support! ❤️"
+                f"💎 **Premium Activated!** 💎\n\n✅ Ads Removed\n✅ Force Subscribe Enabled (/addfsub)\n\nThank you for support! ❤️"
             )
         except:
-            await message.reply_text("⚠️ Database update hua par Group me msg nahi gaya (Bot kicked?)")
+            await message.reply_text("⚠️ Database update hua par Group me msg nahi gaya")
             
-    except ValueError:
-         await message.reply_text("❌ Error: ID or Month sahi number nahi hai.")
     except Exception as e:
         await message.reply_text(f"❌ Error: {e}")
 
@@ -351,8 +352,6 @@ async def remove_premium_cmd(client: Client, message: Message):
         group_id = int(message.command[1])
         await remove_premium(group_id)
         await message.reply_text(f"❌ Premium removed for `{group_id}`")
-    except ValueError:
-        await message.reply_text("❌ Error: Invalid Group ID (Must be a number)")
     except Exception as e:
         await message.reply_text(f"❌ Error: {e}")
 
@@ -365,52 +364,68 @@ async def premium_stats_cmd(client: Client, message: Message):
             count += 1
     await message.reply_text(f"💎 **Total Premium Groups:** {count}")
 
-# ================ MAIN FILTER (UPDATED WITH LINK & ABUSE DETECTION) ================
-@app.on_message(filters.group & filters.text & ~filters.command(["start", "help", "settings", "addfsub", "stats", "ai", "broadcast", "grp_broadcast", "setcommands", "ping", "id", "ban", "unban", "add_premium", "remove_premium", "premiumstats"]))
+# ================ MAIN FILTER (ABUSE + WARNING + LINKS) ================
+@app.on_message(filters.group & filters.text & ~filters.command(["start", "help", "settings", "addfsub", "stats", "ai", "broadcast", "request", "ban", "unban", "add_premium", "remove_premium", "premiumstats", "ping", "id"]))
 async def group_message_filter(client, message):
-    # 1. Ignore Admins/Owner (Unko kuch bhi likhne do)
     if await is_admin(message.chat.id, message.from_user.id):
         return
 
     settings = await get_settings(message.chat.id)
-    if not settings.get("spelling_on", True):
-        return
+    quality = MovieBotUtils.check_message_quality(message.text)
 
-    text = message.text
-    quality = MovieBotUtils.check_message_quality(text)
+    # 1. LINK HANDLING
+    if quality == "LINK":
+        await message.delete()
+        warn_count = await add_warning(message.chat.id, message.from_user.id)
+        limit = 3 # Warning limit
+        
+        if warn_count >= limit:
+            try:
+                # Ban/Mute User (Muting for 24 hours)
+                await client.restrict_chat_member(
+                    message.chat.id, 
+                    message.from_user.id, 
+                    ChatPermissions(can_send_messages=False),
+                    until_date=datetime.datetime.now() + datetime.timedelta(hours=24)
+                )
+                await message.reply_text(f"🚫 {message.from_user.mention} ko Mute kar diya gaya hai (Links not allowed)!")
+                await reset_warnings(message.chat.id, message.from_user.id)
+            except:
+                pass
+        else:
+            msg = await message.reply_text(f"⚠️ {message.from_user.mention}, Link mat bhejo! (Warning {warn_count}/{limit})")
+            await MovieBotUtils.auto_delete_message(client, msg, 5)
 
-    if quality == "JUNK":
-        # Delete IMMEDIATELY
-        try:
-            await message.delete()
-            # Optional: Warn user (Self destructing message)
-            warn = await message.reply_text(
-                f"🚫 {message.from_user.mention}, extra words allowed nahi hain!\n"
-                f"Sahi tarika: `The Raja Saab` ya `Stranger Things S01`"
-            )
-            await MovieBotUtils.auto_delete_message(client, warn, 5)
-        except Exception as e:
-            print(f"Delete Error: {e}")
-            
-    elif quality == "LINK":
-        try:
-            await message.delete()
-            warn = await message.reply_text(f"🚫 {message.from_user.mention}, Links allowed nahi hain!")
-            await MovieBotUtils.auto_delete_message(client, warn, 5)
-        except Exception as e:
-            print(f"Link Delete Error: {e}")
-
+    # 2. ABUSE HANDLING
     elif quality == "ABUSE":
-        try:
-            await message.delete()
-            warn = await message.reply_text(f"🚫 {message.from_user.mention}, Tameez se baat karo! (Abuse Detected)")
-            await MovieBotUtils.auto_delete_message(client, warn, 5)
-        except Exception as e:
-            print(f"Abuse Delete Error: {e}")
+        await message.delete()
+        warn_count = await add_warning(message.chat.id, message.from_user.id)
+        limit = 3
+        
+        if warn_count >= limit:
+            try:
+                # Ban User
+                await client.ban_chat_member(message.chat.id, message.from_user.id)
+                await message.reply_text(f"🚫 {message.from_user.mention} ko Ban kar diya gaya hai (Abusive Language)!")
+                await reset_warnings(message.chat.id, message.from_user.id)
+            except:
+                pass
+        else:
+            msg = await message.reply_text(f"⚠️ {message.from_user.mention}, Gali mat do! (Warning {warn_count}/{limit})")
+            await MovieBotUtils.auto_delete_message(client, msg, 5)
 
-    elif quality == "CLEAN":
-        # Message is clean. Let it stay.
-        pass
+    # 3. SPELLING CHECK (JUNK)
+    elif settings.get("spelling_on", True) and quality == "JUNK":
+        await message.delete()
+        # New Stylish Design
+        msg = await message.reply_text(
+            f"✨ **Spelling Check** ✨\n\n"
+            f"👤 {message.from_user.mention}\n"
+            f"❌ **Galat:** `{message.text}`\n"
+            f"✅ **Sahi:** `Movie Name Year`\n\n"
+            f"⚠️ _Yeh message 3 min me delete ho jayega._"
+        )
+        await MovieBotUtils.auto_delete_message(client, msg, 180) # 3 Minutes (180 seconds)
 
 # ================ AUTO DELETE FILES ================
 @app.on_message(filters.group & (filters.document | filters.video | filters.audio | filters.photo))
@@ -431,7 +446,7 @@ async def auto_delete_files(client: Client, message: Message):
         # Send notification if enabled
         notification = await message.reply_text(
             f"🗑️ File Auto-Deleted\n"
-            f"Files are automatically deleted after {delete_time} minutes in this group.",
+            f"Files are automatically deleted after {delete_time} minutes.",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("⚙️ Settings", callback_data="settings_menu")]
             ])
@@ -440,59 +455,76 @@ async def auto_delete_files(client: Client, message: Message):
     except:
         pass
 
-# ================ FORCE SUBSCRIBE ENFORCEMENT ================
+# ================ FORCE SUBSCRIBE (FIXED & STYLISH) ================
 @app.on_chat_member_updated()
 async def handle_fsub_join(client, update: ChatMemberUpdated):
-    # Only check if new member joins
-    if not update.new_chat_member:
-        return
-        
-    # Ignore if user is bot or already left
-    if update.new_chat_member.user.is_bot:
+    if not update.new_chat_member or update.new_chat_member.user.is_bot:
         return
 
-    chat_id = update.chat.id
+    # Double Message Fix
     user_id = update.new_chat_member.user.id
+    chat_id = update.chat.id
+    cache_key = f"{user_id}_{chat_id}"
     
-    # Check DB for Force Sub Channel
+    if cache_key in fsub_cache:
+        return
+    fsub_cache.append(cache_key)
+    asyncio.get_event_loop().call_later(5, lambda: fsub_cache.remove(cache_key))
+
     fsub_data = await get_force_sub(chat_id)
     if not fsub_data:
         return
 
     channel_id = fsub_data["channel_id"]
+    user = update.new_chat_member.user
     
     try:
-        # Check if user is in channel
         await client.get_chat_member(channel_id, user_id)
-        # User is present, do nothing
     except UserNotParticipant:
-        # User NOT in channel -> Mute them & Send Alert
+        # Mute User
+        await client.restrict_chat_member(chat_id, user_id, ChatPermissions(can_send_messages=False))
+        
+        # Get Channel Link
         try:
-            await client.restrict_chat_member(chat_id, user_id, ChatPermissions(can_send_messages=False))
-            
-            # Get Invite Link
-            try:
-                chat_info = await client.get_chat(channel_id)
-                link = chat_info.invite_link or f"https://t.me/{chat_info.username}"
-            except:
-                link = "#"
+            chat_info = await client.get_chat(channel_id)
+            link = chat_info.invite_link or f"https://t.me/{chat_info.username}"
+        except:
+            link = "https://t.me/your_channel"
 
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📢 Join Channel", url=link)],
-                [InlineKeyboardButton("✅ I Joined", callback_data=f"unmute_{user_id}")]
-            ])
-            
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📢 Join Channel", url=link)],
+            [InlineKeyboardButton("✅ I Joined", callback_data=f"unmute_{user_id}")]
+        ])
+        
+        # Welcome with Photo (Premium Feel)
+        welcome_txt = (
+            f"👋 **Namaste {user.mention}!**\n\n"
+            f"🔒 **Group Locked:** Message karne ke liye channel join karein.\n"
+            f"👇 Niche diye gaye button par click karein."
+        )
+        
+        # Agar user ki photo hai to photo bhejo, nahi to text
+        try:
+            if user.photo:
+                await client.send_photo(chat_id, photo=user.photo.big_file_id, caption=welcome_txt, reply_markup=buttons)
+            else:
+                await client.send_message(chat_id, welcome_txt, reply_markup=buttons)
+        except:
+            await client.send_message(chat_id, welcome_txt, reply_markup=buttons)
+
+# ================ AUTO ACCEPT JOIN REQUEST ================
+@app.on_chat_join_request()
+async def auto_approve_join(client: Client, request: ChatJoinRequest):
+    chat_id = request.chat.id
+    if await get_auto_accept(chat_id):
+        try:
+            await client.approve_chat_join_request(chat_id, request.from_user.id)
             await client.send_message(
-                chat_id,
-                f"👋 Welcome {update.new_chat_member.user.mention}!\n\n"
-                f"🔒 **Group Message Karne ke liye Channel Join karein.**",
-                reply_markup=buttons
+                request.from_user.id, 
+                f"✅ Request Approved for **{request.chat.title}**!\nEnjoy movies! 🍿"
             )
         except Exception as e:
-            logger.error(f"Fsub Error: {e}")
-    except Exception as e:
-        # Bot might not be admin in channel
-        logger.error(f"Fsub Admin Check Error: {e}")
+            logger.error(f"Auto Accept Error: {e}")
 
 # ================ CALLBACK QUERY HANDLERS ================
 @app.on_callback_query()
@@ -523,46 +555,47 @@ Buy karne ke liye owner se contact karein: @asbhai_bsr"""
         await query.message.delete()
         await help_command(client, query.message)
         await query.answer()
-    
+
+    # Request Accept Logic
+    elif data.startswith("req_accept_"):
+        req_user_id = int(data.split("_")[2])
+        try:
+            await client.send_message(query.message.chat.id, f"✅ Movie Available! {query.from_user.mention} ne upload kar di hai. Check karo!")
+            # User ko tag karo
+            await client.send_message(query.message.chat.id, f"👤 <a href='tg://user?id={req_user_id}'>User</a>, aapki request complete ho gayi!")
+            await query.message.delete()
+        except:
+            pass
+
+    # Request Reject Logic
+    elif data.startswith("req_reject_"):
+        req_user_id = int(data.split("_")[2])
+        await client.send_message(query.message.chat.id, f"❌ Movie Not Available / Reject by Admin.")
+        await query.message.delete()
+
+    # Settings Toggles
     elif data == "toggle_spelling":
         settings = await get_settings(chat_id)
         new_value = not settings.get("spelling_on", True)
         await update_settings(chat_id, "spelling_on", new_value)
-        
         status = "✅ ON" if new_value else "❌ OFF"
-        is_prem = await check_is_premium(chat_id)
-        prem_status = "💎 Active" if is_prem else "❌ Free"
-        
-        await query.message.edit_reply_markup(
-            InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"Spelling: {status}", callback_data="toggle_spelling")],
-                [InlineKeyboardButton(f"Auto Delete: {'✅ ON' if settings.get('auto_delete_on', False) else '❌ OFF'}", callback_data="toggle_auto_delete")],
-                [InlineKeyboardButton(f"Time: {settings.get('delete_time', 0)} min", callback_data="set_delete_time")],
-                [InlineKeyboardButton(f"Premium: {prem_status}", callback_data="premium_info")],
-                [InlineKeyboardButton("❌ Close", callback_data="close_settings")]
-            ])
-        )
         await query.answer(f"Spelling correction turned {status}")
+        await refresh_settings_menu(client, query) # Helper function call
     
     elif data == "toggle_auto_delete":
         settings = await get_settings(chat_id)
         new_value = not settings.get("auto_delete_on", False)
         await update_settings(chat_id, "auto_delete_on", new_value)
-        
         status = "✅ ON" if new_value else "❌ OFF"
-        is_prem = await check_is_premium(chat_id)
-        prem_status = "💎 Active" if is_prem else "❌ Free"
-        
-        await query.message.edit_reply_markup(
-            InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"Spelling: {'✅ ON' if settings.get('spelling_on', True) else '❌ OFF'}", callback_data="toggle_spelling")],
-                [InlineKeyboardButton(f"Auto Delete: {status}", callback_data="toggle_auto_delete")],
-                [InlineKeyboardButton(f"Time: {settings.get('delete_time', 0)} min", callback_data="set_delete_time")],
-                [InlineKeyboardButton(f"Premium: {prem_status}", callback_data="premium_info")],
-                [InlineKeyboardButton("❌ Close", callback_data="close_settings")]
-            ])
-        )
         await query.answer(f"Auto delete turned {status}")
+        await refresh_settings_menu(client, query)
+
+    elif data == "toggle_auto_accept":
+        current = await get_auto_accept(chat_id)
+        await set_auto_accept(chat_id, not current)
+        status = "✅ ON" if not current else "❌ OFF"
+        await query.answer(f"Auto Accept: {status}")
+        await refresh_settings_menu(client, query)
     
     elif data == "set_delete_time":
         buttons = InlineKeyboardMarkup([
@@ -579,79 +612,10 @@ Buy karne ke liye owner se contact karein: @asbhai_bsr"""
     elif data.startswith("time_"):
         minutes = int(data.split("_")[1])
         await update_settings(chat_id, "delete_time", minutes)
-        
         time_text = f"{minutes} minutes" if minutes > 0 else "Permanent"
         await query.answer(f"Delete time set to {time_text}")
-        
-        # Go back to settings
-        settings = await get_settings(chat_id)
-        is_prem = await check_is_premium(chat_id)
-        prem_status = "💎 Active" if is_prem else "❌ Free"
-        
-        spelling_status = "✅ ON" if settings.get("spelling_on", True) else "❌ OFF"
-        delete_status = "✅ ON" if settings.get("auto_delete_on", False) else "❌ OFF"
-        delete_time = minutes
-        time_text = f"{delete_time} min" if delete_time > 0 else "Permanent"
-        
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"Spelling: {spelling_status}", callback_data="toggle_spelling")],
-            [InlineKeyboardButton(f"Auto Delete: {delete_status}", callback_data="toggle_auto_delete")],
-            [InlineKeyboardButton(f"Time: {time_text}", callback_data="set_delete_time")],
-            [InlineKeyboardButton(f"Premium: {prem_status}", callback_data="premium_info")],
-            [InlineKeyboardButton("❌ Close", callback_data="close_settings")]
-        ])
-        
-        await query.message.edit_text(
-            f"⚙️ Settings for {query.message.chat.title}",
-            reply_markup=buttons
-        )
-    
-    elif data == "force_sub_menu":
-        force_sub = await get_force_sub(chat_id)
-        if force_sub:
-            channel_id = force_sub.get("channel_id")
-            try:
-                channel = await client.get_chat(channel_id)
-                channel_link = f"https://t.me/{channel.username}" if channel.username else ""
-                
-                buttons = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📢 Visit Channel", url=channel_link)],
-                    [InlineKeyboardButton("❌ Disconnect", callback_data="disconnect_fsub")],
-                    [InlineKeyboardButton("🔙 Back", callback_data="back_settings")]
-                ])
-                await query.message.edit_text(
-                    f"🔗 Force Subscribe Channel:\n\n"
-                    f"Channel: {channel.title}\n"
-                    f"Status: ✅ Connected\n\n"
-                    f"New members must join this channel.",
-                    reply_markup=buttons
-                )
-            except:
-                buttons = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔙 Back", callback_data="back_settings")]
-                ])
-                await query.message.edit_text(
-                    "❌ Channel Not Found!\n\n"
-                    "The channel is no longer accessible or bot was removed.",
-                    reply_markup=buttons
-                )
-        else:
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("➕ Set Channel", callback_data="set_fsub")],
-                [InlineKeyboardButton("🔙 Back", callback_data="back_settings")]
-            ])
-            await query.message.edit_text(
-                "🔗 Force Subscribe\n\n"
-                "No channel set yet. Set a channel that new members must join.",
-                reply_markup=buttons
-            )
-        await query.answer()
-    
-    elif data == "disconnect_fsub":
-        await remove_force_sub(chat_id)
-        await query.answer("✅ Force subscribe disconnected!")
-        await query.message.delete()
-    
+        await refresh_settings_menu(client, query)
+
     elif data == "clear_junk":
         junk_count = await clear_junk()
         await query.answer(f"🧹 Cleared {junk_count} junk entries!")
@@ -666,8 +630,6 @@ Buy karne ke liye owner se contact karein: @asbhai_bsr"""
     elif data == "refresh_stats":
         users = await get_user_count()
         groups = await get_group_count()
-        
-        # Premium groups count
         premium_count = 0
         all_grps = await get_all_groups()
         for g in all_grps:
@@ -696,12 +658,13 @@ Buy karne ke liye owner se contact karein: @asbhai_bsr"""
         if user_id != target_id:
             return await query.answer("Ye button apke liye nahi hai!", show_alert=True)
             
-        # Re-check join status
         fsub_data = await get_force_sub(chat_id)
+        if not fsub_data:
+             return await query.message.delete()
+
         channel_id = fsub_data["channel_id"]
         try:
             await client.get_chat_member(channel_id, user_id)
-            # Unmute
             await client.restrict_chat_member(
                 chat_id, user_id,
                 ChatPermissions(
@@ -715,50 +678,40 @@ Buy karne ke liye owner se contact karein: @asbhai_bsr"""
         except UserNotParticipant:
             await query.answer("❌ Abhi bhi join nahi kiya!", show_alert=True)
     
-    elif data == "ok_correction":
-        await query.message.delete()
-        await query.answer()
-    
     elif data == "close_settings":
         await query.message.delete()
         await query.answer("Settings closed!")
     
-    elif data == "back_settings":
-        settings = await get_settings(chat_id)
-        is_prem = await check_is_premium(chat_id)
-        prem_status = "💎 Active" if is_prem else "❌ Free"
-        
-        spelling_status = "✅ ON" if settings.get("spelling_on", True) else "❌ OFF"
-        delete_status = "✅ ON" if settings.get("auto_delete_on", False) else "❌ OFF"
-        delete_time = settings.get("delete_time", 0)
-        time_text = f"{delete_time} min" if delete_time > 0 else "Permanent"
-        
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"Spelling: {spelling_status}", callback_data="toggle_spelling")],
-            [InlineKeyboardButton(f"Auto Delete: {delete_status}", callback_data="toggle_auto_delete")],
-            [InlineKeyboardButton(f"Time: {time_text}", callback_data="set_delete_time")],
-            [InlineKeyboardButton(f"Premium: {prem_status}", callback_data="premium_info")],
-            [InlineKeyboardButton("❌ Close", callback_data="close_settings")]
-        ])
-        
-        await query.message.edit_text(
-            f"⚙️ Settings for {query.message.chat.title}",
-            reply_markup=buttons
-        )
-        await query.answer()
+    elif data == "back_settings" or data == "settings_menu":
+        await refresh_settings_menu(client, query)
+
+# Helper for updating settings menu
+async def refresh_settings_menu(client, query):
+    chat_id = query.message.chat.id
+    settings = await get_settings(chat_id)
+    is_prem = await check_is_premium(chat_id)
+    auto_accept = await get_auto_accept(chat_id)
     
-    elif data == "set_fsub":
-        await query.message.edit_text(
-            "🔗 Set Force Subscribe Channel\n\n"
-            "To set force subscribe channel:\n"
-            "1. Forward any message from your channel\n"
-            "2. Reply to it with command: /addfsub\n\n"
-            "Make sure I'm admin in that channel!",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔙 Back", callback_data="force_sub_menu")]
-            ])
-        )
-        await query.answer()
+    prem_status = "💎 Active" if is_prem else "❌ Free"
+    spelling_status = "✅ ON" if settings.get("spelling_on", True) else "❌ OFF"
+    delete_status = "✅ ON" if settings.get("auto_delete_on", False) else "❌ OFF"
+    accept_status = "✅ ON" if auto_accept else "❌ OFF"
+    delete_time = settings.get("delete_time", 0)
+    time_text = f"{delete_time} min" if delete_time > 0 else "Permanent"
+    
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"Spelling: {spelling_status}", callback_data="toggle_spelling")],
+        [InlineKeyboardButton(f"Auto Delete: {delete_status}", callback_data="toggle_auto_delete")],
+        [InlineKeyboardButton(f"Auto Accept: {accept_status}", callback_data="toggle_auto_accept")],
+        [InlineKeyboardButton(f"Time: {time_text}", callback_data="set_delete_time")],
+        [InlineKeyboardButton(f"Premium: {prem_status}", callback_data="premium_info")],
+        [InlineKeyboardButton("❌ Close", callback_data="close_settings")]
+    ])
+    
+    await query.message.edit_text(
+        f"⚙️ Settings for **{query.message.chat.title}**",
+        reply_markup=buttons
+    )
 
 # ================ GROUP EVENTS ================
 @app.on_message(filters.new_chat_members)
@@ -775,29 +728,20 @@ async def welcome_new_members(client: Client, message: Message):
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⚙️ Settings", callback_data="settings_menu")]])
             )
             
-            # LOGS + INVITE LINK
+            # LOGS
             if Config.LOGS_CHANNEL:
-                invite_link = "N/A"
                 try:
-                    link_obj = await client.export_chat_invite_link(message.chat.id)
-                    invite_link = link_obj.invite_link
-                except:
-                    invite_link = "Bot needs Admin to generate link"
-                
-                log_txt = (
-                    f"📂 **Bot Added to Group**\n\n"
-                    f"📛 Name: {message.chat.title}\n"
-                    f"🆔 ID: `{message.chat.id}`\n"
-                    f"👥 Members: {await client.get_chat_members_count(message.chat.id)}\n"
-                    f"🔗 Link: {invite_link}\n"
-                    f"👤 Added By: {message.from_user.mention if message.from_user else 'Unknown'}"
-                )
-                try:
+                    log_txt = (
+                        f"📂 **Bot Added to Group**\n\n"
+                        f"📛 Name: {message.chat.title}\n"
+                        f"🆔 ID: `{message.chat.id}`\n"
+                        f"👥 Members: {await client.get_chat_members_count(message.chat.id)}\n"
+                        f"👤 Added By: {message.from_user.mention if message.from_user else 'Unknown'}"
+                    )
                     await client.send_message(Config.LOGS_CHANNEL, log_txt)
                 except Exception as e:
                     logger.error(f"Log Error: {e}")
-            
-            break  # Only need to handle bot addition once
+            break
 
 # ================ SETCOMMANDS COMMAND ================
 @app.on_message(filters.command("setcommands") & filters.user(Config.OWNER_ID))
@@ -807,6 +751,7 @@ async def setcommands_command(client: Client, message: Message):
         {"command": "start", "description": "Start the bot"},
         {"command": "help", "description": "Get help"},
         {"command": "settings", "description": "Group settings"},
+        {"command": "request", "description": "Request a movie"},
         {"command": "stats", "description": "Bot statistics"},
         {"command": "ai", "description": "Ask AI about movies"},
         {"command": "addfsub", "description": "Set force subscribe (Premium)"},
@@ -827,9 +772,7 @@ async def ping_command(client: Client, message: Message):
     start_time = time.time()
     msg = await message.reply_text("🏓 Pinging...")
     end_time = time.time()
-    
     ping_time = round((end_time - start_time) * 1000, 2)
-    
     await msg.edit_text(f"🏓 Pong!\n\n⏱ Response Time: {ping_time}ms\n🚀 Status: ✅ Alive\n☁️ Server: Koyeb Cloud")
 
 # ================ ID COMMAND ================
@@ -838,48 +781,41 @@ async def id_command(client: Client, message: Message):
     """Get user/group ID"""
     chat_id = message.chat.id
     user_id = message.from_user.id
-    
     text = f"👤 Your ID: `{user_id}`\n"
-    
     if message.chat.type != "private":
         text += f"👥 Group ID: `{chat_id}`\n"
         text += f"📝 Group Title: {message.chat.title}\n"
-    
     await message.reply_text(text)
 
-# ================ BAN/UNBAN COMMANDS ================
+# ================ BAN/UNBAN COMMANDS (DB BAN) ================
 @app.on_message(filters.command("ban") & filters.user(Config.OWNER_ID))
 async def ban_command(client: Client, message: Message):
-    """Ban a user"""
+    """Ban a user from Bot"""
     if len(message.command) < 2:
         await message.reply_text("Usage: /ban <user_id>")
         return
-    
     try:
         user_id = int(message.command[1])
         await ban_user(user_id)
-        await message.reply_text(f"✅ User `{user_id}` banned successfully!")
+        await message.reply_text(f"✅ User `{user_id}` banned from Bot successfully!")
     except ValueError:
         await message.reply_text("❌ Invalid user ID!")
 
 @app.on_message(filters.command("unban") & filters.user(Config.OWNER_ID))
 async def unban_command(client: Client, message: Message):
-    """Unban a user"""
+    """Unban a user from Bot"""
     if len(message.command) < 2:
         await message.reply_text("Usage: /unban <user_id>")
         return
-    
     try:
         user_id = int(message.command[1])
         await unban_user(user_id)
-        await message.reply_text(f"✅ User `{user_id}` unbanned successfully!")
+        await message.reply_text(f"✅ User `{user_id}` unbanned from Bot successfully!")
     except ValueError:
         await message.reply_text("❌ Invalid user ID!")
 
 if __name__ == "__main__":
     print("🚀 Starting Movie Helper Bot...")
-    
-    # Simple run without idle
     try:
         app.run()
     except KeyboardInterrupt:
