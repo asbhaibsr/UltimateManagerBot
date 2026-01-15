@@ -14,6 +14,8 @@ users_col = db["users"]
 groups_col = db["groups"]
 settings_col = db["settings"]
 force_sub_col = db["force_sub"]
+warnings_col = db["warnings"]
+auto_accept_col = db["auto_accept"]
 
 # ================ USER FUNCTIONS ================
 async def add_user(user_id, username=None, first_name=None, last_name=None):
@@ -175,3 +177,34 @@ async def remove_force_sub(chat_id):
 async def clear_junk():
     result = await users_col.delete_many({"banned": True})
     return result.deleted_count
+
+# ================ WARNING SYSTEM ================
+async def get_warnings(chat_id, user_id):
+    data = await warnings_col.find_one({"chat_id": chat_id, "user_id": user_id})
+    return data["count"] if data else 0
+
+async def add_warning(chat_id, user_id):
+    data = await warnings_col.find_one({"chat_id": chat_id, "user_id": user_id})
+    count = (data["count"] + 1) if data else 1
+    await warnings_col.update_one(
+        {"chat_id": chat_id, "user_id": user_id},
+        {"$set": {"count": count}},
+        upsert=True
+    )
+    return count
+
+async def reset_warnings(chat_id, user_id):
+    await warnings_col.delete_one({"chat_id": chat_id, "user_id": user_id})
+
+# ================ AUTO ACCEPT SYSTEM ================
+async def set_auto_accept(chat_id, status: bool):
+    await auto_accept_col.update_one(
+        {"_id": chat_id},
+        {"$set": {"enabled": status}},
+        upsert=True
+    )
+
+async def get_auto_accept(chat_id):
+    data = await auto_accept_col.find_one({"_id": chat_id})
+    return data.get("enabled", False) if data else False
+
