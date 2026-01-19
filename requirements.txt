@@ -6,6 +6,6 @@ aiohttp==3.9.3
 apscheduler==3.10.4
 TgCrypto==1.2.5
 flask==3.0.0
-g4f==0.2.1.2
+g4f==0.6.9.3
 dnspython==2.6.1
 Pillow==10.2.0
