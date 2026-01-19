@@ -50,17 +50,28 @@ class MovieBotUtils:
                     data = await resp.json()
             
             if data.get("Response") == "True":
-                return f"""🎬 **Movie Info:**
-📝 **Name:** {data.get("Title")}
-📅 **Year:** {data.get("Year")}
-⭐ **Rating:** {data.get("imdbRating")}/10
-🎭 **Genre:** {data.get("Genre")}
-🌐 **Link:** https://www.imdb.com/title/{data.get("imdbID")}/
+                title = data.get("Title", "N/A")
+                year = data.get("Year", "N/A")
+                rating = data.get("imdbRating", "N/A")
+                genre = data.get("Genre", "N/A")
+                actors = data.get("Actors", "N/A")
+                plot = data.get("Plot", "N/A")
+                
+                return f"""🎬 **Movie Information** 🎬
 
-Mast movie hai! 😍"""
-            return "Movie details nahi mili! 😕"
+📝 **Title:** {title}
+📅 **Year:** {year}
+⭐ **Rating:** {rating}/10
+🎭 **Genre:** {genre}
+👥 **Cast:** {actors}
+📖 **Plot:** {plot[:200]}...
+
+🎥 **Link:** https://www.imdb.com/title/{data.get("imdbID")}/
+
+_Yeh movie dekhne layak hai! 😍_"""
+            return "❌ Movie details nahi mili! 😕"
         except:
-            return "OMDb API Error! 📡"
+            return "❌ OMDb API Error! 📡"
 
     # --- 2. ADVANCED MESSAGE CHECKER (SECURITY++) ---
     @staticmethod
@@ -161,3 +172,30 @@ Mast movie hai! 😍"""
             except Exception as e:
                 failed += 1
         return success, failed
+
+    # --- 6. MOVIE DATABASE (Sample Movies) ---
+    @staticmethod
+    def get_movie_suggestions():
+        """Return list of popular movies for spelling suggestions"""
+        return [
+            "Pushpa 2 The Rule 2024",
+            "Kalki 2898 AD",
+            "Jawan 2023",
+            "Pathaan 2023",
+            "Animal 2023",
+            "Gadar 2 2023",
+            "OMG 2 2023",
+            "Mission Impossible 2023",
+            "Oppenheimer 2023",
+            "Barbie 2023",
+            "Spider-Man Across The Spider-Verse",
+            "The Kerala Story 2023",
+            "Vikram Vedha 2022",
+            "Brahmastra 2022",
+            "RRR 2022",
+            "KGF Chapter 2 2022",
+            "83 2021",
+            "Sooryavanshi 2021",
+            "Tenet 2020",
+            "Avengers Endgame 2019"
+        ]
