@@ -3,7 +3,6 @@ import logging
 import sys
 import os
 import time
-import datetime
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -103,14 +102,8 @@ async def run_bot():
     try:
         # Import bot after health server is started
         from bot import app
-        from database import initialize_database
         
         logger.info("🚀 Starting Movie Helper Bot...")
-        
-        # Initialize database
-        logger.info("🔧 Initializing database...")
-        await initialize_database()
-        logger.info("✅ Database initialized successfully!")
         
         # Start the bot
         await app.start()
@@ -118,7 +111,6 @@ async def run_bot():
         # Get bot info
         bot_info = await app.get_me()
         logger.info(f"✅ Bot started as @{bot_info.username}")
-        logger.info(f"✅ Bot ID: {bot_info.id}")
         
         # Set bot commands
         try:
@@ -128,7 +120,7 @@ async def run_bot():
                 BotCommand("start", "Start the bot"),
                 BotCommand("help", "Get help"),
                 BotCommand("settings", "Group settings"),
-                BotCommand("request", "Request a movie"),
+                BotCommand("stats", "Bot statistics"),
                 BotCommand("ai", "Ask AI about movies"),
                 BotCommand("addfsub", "Set force subscribe"),
                 BotCommand("ping", "Check bot status"),
@@ -143,132 +135,38 @@ async def run_bot():
         # Send startup message to owner
         try:
             from config import Config
-            
-            # Database stats
-            from database import get_database_stats
-            stats = await get_database_stats()
-            
-            startup_message = (
-                f"🤖 **Bot Started Successfully!**\n\n"
-                f"**📊 Bot Info:**\n"
-                f"• Name: @{bot_info.username}\n"
-                f"• ID: `{bot_info.id}`\n"
-                f"• Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            await app.send_message(
+                Config.OWNER_ID,
+                f"🤖 Bot Started Successfully!\n\n"
+                f"• Bot: @{bot_info.username}\n"
+                f"• Time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
                 f"• Server: Koyeb Cloud\n"
                 f"• Status: ✅ Running\n\n"
-                f"**📈 Database Stats:**\n"
-                f"• Users: {stats['active_users']}\n"
-                f"• Groups: {stats['active_groups']}\n"
-                f"• Premium: {stats['premium_groups']['active']}\n\n"
-                f"**🔗 Health Check:**\n"
-                f"http://0.0.0.0:8080/health\n\n"
-                f"**✅ Bot is ready to receive messages!**"
+                f"Health check: http://0.0.0.0:8080/health"
             )
-            
-            await app.send_message(Config.OWNER_ID, startup_message)
-            logger.info("✅ Startup message sent to owner")
-            
-        except Exception as e:
-            logger.error(f"⚠️ Could not send startup message: {e}")
+        except:
+            pass
         
         logger.info("🤖 Bot is now running and ready to receive messages...")
         logger.info("📡 Waiting for messages...")
         
-        print("\n" + "="*60)
-        print("🎬 MOVIE HELPER BOT - RUNNING")
-        print("="*60)
-        print(f"Bot: @{bot_info.username}")
-        print(f"ID: {bot_info.id}")
-        print(f"Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Status: 🟢 ONLINE")
-        print("="*60 + "\n")
-        
-        # Keep bot running forever
+        # Keep bot running forever - SIMPLE VERSION WITHOUT IDLE
         try:
             while True:
-                # Check database connection periodically
-                try:
-                    from database import get_database_stats
-                    stats = await get_database_stats()
-                    
-                    # Log periodic stats every 6 hours
-                    current_hour = datetime.datetime.now().hour
-                    if current_hour % 6 == 0:
-                        logger.info(
-                            f"📊 Periodic Stats - "
-                            f"Users: {stats['active_users']}, "
-                            f"Groups: {stats['active_groups']}, "
-                            f"Premium: {stats['premium_groups']['active']}"
-                        )
-                        
-                        # Cleanup old data every 24 hours
-                        if current_hour == 0:
-                            from database import cleanup_all_old_data
-                            cleaned = await cleanup_all_old_data()
-                            if cleaned > 0:
-                                logger.info(f"🧹 Cleaned {cleaned} old records")
-                except Exception as e:
-                    logger.error(f"Periodic check error: {e}")
-                
                 await asyncio.sleep(3600)  # Sleep for 1 hour
-                
         except KeyboardInterrupt:
             logger.info("⏹️ Bot stopped by user")
-            
-            # Send shutdown message to owner
-            try:
-                from config import Config
-                await app.send_message(
-                    Config.OWNER_ID,
-                    f"⏹️ **Bot Stopped**\n\n"
-                    f"Bot @{bot_info.username} has been stopped.\n"
-                    f"Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                )
-            except:
-                pass
-            
             await app.stop()
-            logger.info("✅ Bot stopped gracefully")
             sys.exit(0)
-            
-        except Exception as e:
-            logger.error(f"❌ Bot runtime error: {e}")
-            await app.stop()
-            sys.exit(1)
-            
-    except ImportError as e:
-        logger.error(f"❌ Import error: {e}")
-        logger.error("Please check if all required files exist:")
-        logger.error("- bot.py")
-        logger.error("- config.py")
-        logger.error("- database.py")
-        logger.error("- utils.py")
-        sys.exit(1)
         
     except Exception as e:
-        logger.error(f"❌ Bot startup failed: {e}")
+        logger.error(f"❌ Bot crashed: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
 
 def main():
     """Main function to run both health server and bot"""
-    print("\n" + "="*60)
-    print("🎬 MOVIE HELPER BOT - STARTING")
-    print("="*60)
-    print("✅ All features implemented:")
-    print("   1. Welcome Messages Fixed")
-    print("   2. /request Command with Admin Tagging")
-    print("   3. Admin-only Buttons")
-    print("   4. Professional Design")
-    print("   5. Force Subscribe System")
-    print("   6. Auto Accept Join Requests")
-    print("   7. Spelling Correction")
-    print("   8. AI Movie Chat")
-    print("   9. Database Integration")
-    print("   10.Premium Features")
-    print("="*60)
-    
     # Start health server in separate thread
     health_thread = Thread(target=run_health_server, daemon=True)
     health_thread.start()
@@ -277,13 +175,7 @@ def main():
     time.sleep(3)
     
     # Run Telegram bot
-    try:
-        asyncio.run(run_bot())
-    except KeyboardInterrupt:
-        print("\n⏹️ Bot stopped by user")
-    except Exception as e:
-        logger.error(f"❌ Main function error: {e}")
-        sys.exit(1)
+    asyncio.run(run_bot())
 
 if __name__ == "__main__":
     main()
