@@ -1,5 +1,3 @@
-# database.py
-
 import motor.motor_asyncio
 import datetime
 from datetime import timedelta
@@ -16,6 +14,7 @@ settings_col = db["settings"]
 force_sub_col = db["force_sub"]
 warnings_col = db["warnings"]
 auto_accept_col = db["auto_accept"]
+movie_requests_col = db["movie_requests"]
 
 # ================ USER FUNCTIONS ================
 async def add_user(user_id, username=None, first_name=None, last_name=None):
@@ -90,7 +89,7 @@ async def get_group_count():
 async def remove_group(group_id):
     await groups_col.delete_one({"_id": group_id})
 
-# ================ PREMIUM FUNCTIONS (NEW) ================
+# ================ PREMIUM FUNCTIONS ================
 async def add_premium(group_id, months):
     # Calculate expiry date
     expiry_date = datetime.datetime.now() + timedelta(days=30 * int(months))
@@ -143,7 +142,8 @@ async def get_settings(chat_id):
             "auto_delete_on": False,
             "delete_time": 0,
             "welcome_enabled": True,
-            "force_sub_enabled": False
+            "force_sub_enabled": False,
+            "ai_enabled": True
         }
         try:
             await settings_col.insert_one(default_settings)
@@ -208,3 +208,24 @@ async def get_auto_accept(chat_id):
     data = await auto_accept_col.find_one({"_id": chat_id})
     return data.get("enabled", False) if data else False
 
+# ================ MOVIE REQUESTS ================
+async def add_movie_request(chat_id, user_id, movie_name):
+    await movie_requests_col.insert_one({
+        "chat_id": chat_id,
+        "user_id": user_id,
+        "movie_name": movie_name,
+        "status": "pending",
+        "requested_at": datetime.datetime.now()
+    })
+
+async def get_pending_requests(chat_id):
+    requests = []
+    async for req in movie_requests_col.find({"chat_id": chat_id, "status": "pending"}):
+        requests.append(req)
+    return requests
+
+async def update_request_status(request_id, status):
+    await movie_requests_col.update_one(
+        {"_id": request_id},
+        {"$set": {"status": status, "updated_at": datetime.datetime.now()}}
+                )
