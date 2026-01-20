@@ -18,16 +18,21 @@ class Config:
     
     # AI Configuration
     G4F_MODEL = "gpt-3.5-turbo"
+    AI_TIMEOUT = 20  # Seconds timeout for AI responses
     
     # OMDb API Key (free)
     OMDB_API_KEY = os.getenv("OMDB_API_KEY", "6ed172d8")
     
     # Additional Config
     AUTO_DELETE_TIME = 300  # Seconds to auto-delete bot messages
-    BROADCAST_DELAY = 0.5  # Seconds between broadcasts to avoid flood
+    BROADCAST_DELAY = 0.5  # Seconds between broadcasts
+    SPELLING_CHECK_TIMEOUT = 10  # Timeout for spelling checks
     
     # Force Sub Channel
     FORCE_SUB_CHANNEL = os.getenv("FORCE_SUB_CHANNEL", "@asbhai_bsr")
     
     # Logs Channel
     LOGS_CHANNEL = int(os.getenv("LOGS_CHANNEL", -1002352329534))
+    
+    # Welcome Settings
+    WELCOME_WITH_PHOTO = True  # Default welcome with photo
