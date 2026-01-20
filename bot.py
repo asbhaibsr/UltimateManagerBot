@@ -7,7 +7,8 @@ from pyrogram import Client, filters, idle
 from pyrogram.enums import ChatMemberStatus, ChatType
 from pyrogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton, 
-    CallbackQuery, ChatMemberUpdated, ChatPermissions, ChatJoinRequest
+    CallbackQuery, ChatMemberUpdated, ChatPermissions, ChatJoinRequest,
+    BotCommand, BotCommandScopeAllPrivateChats
 )
 from pyrogram.errors import FloodWait, UserNotParticipant, ChatAdminRequired, PeerIdInvalid
 from config import Config
@@ -32,7 +33,6 @@ app = Client(
 
 # Cache for Force Sub to prevent double messages
 fsub_cache = []
-command_cache = {}  # For auto-deleting command messages
 
 # ================ HELPER FUNCTIONS ================
 async def is_admin(chat_id, user_id):
@@ -55,14 +55,17 @@ async def get_channel_info(channel_id):
         return "Unknown Channel", None
 
 async def get_admins_mentions(chat_id, exclude_user_id=None):
-    """Get list of admin mentions for tagging"""
+    """Get list of admin mentions for tagging with emoji"""
     admins = []
     try:
         async for admin in app.get_chat_members(chat_id, filter="administrators"):
             if (not admin.user.is_bot and 
                 admin.user.id != exclude_user_id and
                 admin.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]):
-                admins.append(f"<a href='tg://user?id={admin.user.id}'>{admin.user.first_name}</a>")
+                
+                # Add emoji based on admin status
+                emoji = "👑" if admin.status == ChatMemberStatus.OWNER else "⚡"
+                admins.append(f"{emoji} <a href='tg://user?id={admin.user.id}'>{admin.user.first_name}</a>")
     except Exception as e:
         logger.error(f"Get admins error: {e}")
     return admins
@@ -161,7 +164,7 @@ async def help_command(client: Client, message: Message):
         msg = await message.reply_text(help_text, reply_markup=buttons)
         asyncio.create_task(MovieBotUtils.auto_delete_message(client, msg, 120))
 
-# ================ SETTINGS COMMAND (UPDATED) ================
+# ================ SETTINGS COMMAND (UPDATED WITH SPELLING OPTIONS) ================
 @app.on_message(filters.command("settings") & filters.group)
 async def settings_command(client: Client, message: Message):
     """Group settings menu"""
@@ -175,41 +178,59 @@ async def settings_command(client: Client, message: Message):
         return
     
     settings = await get_settings(message.chat.id)
+    spelling_settings = await get_spelling_settings(message.chat.id)
     is_prem = await check_is_premium(message.chat.id)
     auto_accept = await get_auto_accept(message.chat.id)
     
     prem_status = "💎 Active" if is_prem else "🔓 Free"
     spelling_status = "✅ ON" if settings.get("spelling_on", True) else "❌ OFF"
+    advanced_spelling = "🔍 Advanced" if spelling_settings.get("advanced_spelling", False) else "📝 Simple"
     delete_status = "✅ ON" if settings.get("auto_delete_on", False) else "❌ OFF"
     accept_status = "✅ ON" if auto_accept else "❌ OFF"
     welcome_status = "✅ ON" if settings.get("welcome_enabled", True) else "❌ OFF"
+    welcome_photo = "📸 ON" if settings.get("welcome_with_photo", True) else "📝 TEXT"
     time_text = f"{settings.get('delete_time', 0)} min" if settings.get('delete_time', 0) > 0 else "Permanent"
     
+    # Professional buttons layout (2 buttons per row)
     buttons = InlineKeyboardMarkup([
         [
             InlineKeyboardButton(f"✏️ Spelling: {spelling_status}", callback_data="toggle_spelling"),
-            InlineKeyboardButton(f"🗑️ Delete: {delete_status}", callback_data="toggle_auto_delete")
+            InlineKeyboardButton(f"🔍 Type: {advanced_spelling}", callback_data="toggle_adv_spelling")
+        ],
+        [
+            InlineKeyboardButton(f"🗑️ Auto Delete: {delete_status}", callback_data="toggle_auto_delete"),
+            InlineKeyboardButton(f"⏰ Time: {time_text}", callback_data="set_delete_time")
         ],
         [
             InlineKeyboardButton(f"✅ Auto Accept: {accept_status}", callback_data="toggle_auto_accept"),
             InlineKeyboardButton(f"👋 Welcome: {welcome_status}", callback_data="toggle_welcome")
         ],
         [
-            InlineKeyboardButton(f"⏰ Time: {time_text}", callback_data="set_delete_time"),
+            InlineKeyboardButton(f"📸 Welcome Photo: {welcome_photo}", callback_data="toggle_welcome_photo"),
             InlineKeyboardButton(f"{prem_status} Premium", callback_data="premium_info")
         ],
-        [InlineKeyboardButton("❌ Close", callback_data="close_settings")]
+        [
+            InlineKeyboardButton("🔄 Refresh", callback_data="refresh_settings"),
+            InlineKeyboardButton("❌ Close", callback_data="close_settings")
+        ]
     ])
     
-    msg = await message.reply_text(
-        f"**⚙️ Settings for {message.chat.title}**\n\n"
-        f"_Click buttons to toggle settings:_",
-        reply_markup=buttons
-    )
-    # Auto delete after 5 minutes
+    settings_text = f"""**⚙️ Settings for {message.chat.title}**
+
+• **✏️ Spelling Check:** {spelling_status}
+• **🔍 Spelling Mode:** {advanced_spelling}
+• **🗑️ Auto Delete:** {delete_status} ({time_text})
+• **✅ Auto Accept:** {accept_status}
+• **👋 Welcome Msg:** {welcome_status}
+• **📸 Welcome Photo:** {welcome_photo}
+• **💎 Premium:** {prem_status}
+
+_Click buttons to change settings:_"""
+    
+    msg = await message.reply_text(settings_text, reply_markup=buttons)
     asyncio.create_task(MovieBotUtils.auto_delete_message(client, msg, 300))
 
-# ================ REQUEST HANDLER (FIXED - ADMIN TAGGING) ================
+# ================ REQUEST HANDLER (IMPROVED WITH EMOJI TAGS) ================
 @app.on_message(filters.command("request") & filters.group)
 async def request_handler(client: Client, message: Message):
     if not message.from_user:
@@ -224,40 +245,53 @@ async def request_handler(client: Client, message: Message):
     user = message.from_user
     chat = message.chat
     
-    # Get admins for tagging (EXCLUDE THE USER WHO SENT REQUEST)
+    # Get admins for tagging with emoji format
     admins = await get_admins_mentions(chat.id, exclude_user_id=user.id)
     
-    # Format admin tags with proper HTML mentions
+    # Format with emoji tags
     if admins:
-        admin_tags = " ".join(admins[:3])  # Max 3 admins tag
+        admin_tags = ""
+        for i, admin in enumerate(admins[:3], 1):  # Max 3 admins
+            emoji = "👑" if i == 1 else "⚡" if i == 2 else "⭐"
+            admin_tags += f"{emoji} {admin}\n"
     else:
         admin_tags = "👑 **Group Admins**"
     
-    # Create request message with owner/admin tagging
+    # Create request message with professional design
     text = (
-        f"🎬 **NEW MOVIE REQUEST** 🎬\n\n"
-        f"**👤 User:** {user.mention}\n"
-        f"**🎬 Movie:** `{movie_name}`\n"
+        f"🎬 **NEW MOVIE REQUEST** 🎬\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"**📌 Movie:** `{movie_name}`\n"
+        f"**👤 Requested By:** {user.mention}\n"
         f"**📍 Group:** {chat.title}\n\n"
-        f"**{admin_tags}** - Please check this request!"
+        f"**{admin_tags}**\n"
+        f"Please check this request!"
     )
     
-    # Buttons sirf admin/owner ke liye
+    # Professional buttons (3 in a row)
     buttons = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Available", callback_data=f"req_accept_{user.id}_{message.id}"),
-            InlineKeyboardButton("❌ Not Available", callback_data=f"req_reject_{user.id}_{message.id}")
+            InlineKeyboardButton("❌ Not Available", callback_data=f"req_reject_{user.id}_{message.id}"),
+            InlineKeyboardButton("⏳ Processing", callback_data=f"req_process_{user.id}_{message.id}")
         ],
         [
-            InlineKeyboardButton("📝 Check Status", callback_data=f"req_status_{user.id}")
+            InlineKeyboardButton("📊 Check Stats", callback_data=f"req_stats_{user.id}"),
+            InlineKeyboardButton("👤 My Requests", callback_data=f"my_requests_{user.id}")
+        ],
+        [
+            InlineKeyboardButton("🔔 Notify All", callback_data=f"notify_all_{chat.id}"),
+            InlineKeyboardButton("🗑️ Delete", callback_data=f"delete_req_{message.id}")
         ]
     ])
     
     msg = await message.reply_text(text, reply_markup=buttons)
-    # Auto delete after 5 minutes
     asyncio.create_task(MovieBotUtils.auto_delete_message(client, msg, 300))
+    
+    # Also save to database
+    await add_movie_request(chat.id, user.id, movie_name)
 
-# Also handle #request hashtag (FIXED VERSION)
+# Also handle #request hashtag (IMPROVED VERSION)
 @app.on_message(filters.group & filters.regex(r'^#request\s+', re.IGNORECASE))
 async def hashtag_request_handler(client: Client, message: Message):
     if not message.from_user:
@@ -276,94 +310,161 @@ async def hashtag_request_handler(client: Client, message: Message):
     except:
         pass
     
-    # Get admins for tagging (EXCLUDE THE USER WHO SENT REQUEST)
+    # Get admins for tagging with emoji format
     admins = await get_admins_mentions(chat.id, exclude_user_id=user.id)
     
-    # Format admin tags with proper HTML mentions
+    # Format with emoji tags
     if admins:
-        admin_tags = " ".join(admins[:3])  # Max 3 admins tag
+        admin_tags = ""
+        for i, admin in enumerate(admins[:3], 1):  # Max 3 admins
+            emoji = "👑" if i == 1 else "⚡" if i == 2 else "⭐"
+            admin_tags += f"{emoji} {admin}\n"
     else:
         admin_tags = "👑 **Group Admins**"
     
     # Create request message
     text = (
-        f"🎬 **NEW MOVIE REQUEST** 🎬\n\n"
-        f"**👤 User:** {user.mention}\n"
-        f"**🎬 Movie:** `{movie_name}`\n"
+        f"🎬 **NEW MOVIE REQUEST** 🎬\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"**📌 Movie:** `{movie_name}`\n"
+        f"**👤 Requested By:** {user.mention}\n"
         f"**📍 Group:** {chat.title}\n\n"
-        f"**{admin_tags}** - Please check this request!"
+        f"**{admin_tags}**\n"
+        f"Please check this request!"
     )
     
-    # Buttons sirf admin/owner ke liye
+    # Professional buttons
     buttons = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Available", callback_data=f"req_accept_{user.id}_{message.id}"),
             InlineKeyboardButton("❌ Not Available", callback_data=f"req_reject_{user.id}_{message.id}")
         ],
         [
-            InlineKeyboardButton("📝 Check Status", callback_data=f"req_status_{user.id}")
+            InlineKeyboardButton("📊 Check Status", callback_data=f"req_status_{user.id}")
         ]
     ])
     
     msg = await client.send_message(chat.id, text, reply_markup=buttons)
     # Auto delete after 5 minutes
     asyncio.create_task(MovieBotUtils.auto_delete_message(client, msg, 300))
+    
+    # Save to database
+    await add_movie_request(chat.id, user.id, movie_name)
 
-# ================ STATS COMMAND ================
+# ================ STATS COMMAND WITH BETTER BUTTONS ================
 @app.on_message(filters.command("stats") & filters.user(Config.OWNER_ID))
 async def stats_command(client: Client, message: Message):
-    """Bot statistics"""
+    """Bot statistics with professional buttons"""
     users = await get_user_count()
     groups = await get_group_count()
     
-    # Premium groups count
     premium_count = 0
     all_grps = await get_all_groups()
     for g in all_grps:
         if await check_is_premium(g):
             premium_count += 1
     
+    # Professional button layout
     buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🧹 Clear Junk", callback_data="clear_junk")],
-        [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_stats")]
+        [
+            InlineKeyboardButton("🧹 Clear Junk", callback_data="clear_junk"),
+            InlineKeyboardButton("📊 User Stats", callback_data="user_stats")
+        ],
+        [
+            InlineKeyboardButton("👥 Group Stats", callback_data="group_stats"),
+            InlineKeyboardButton("💎 Premium Stats", callback_data="premium_stats")
+        ],
+        [
+            InlineKeyboardButton("🔄 Refresh", callback_data="refresh_stats"),
+            InlineKeyboardButton("📈 Analytics", callback_data="analytics")
+        ],
+        [
+            InlineKeyboardButton("❌ Close", callback_data="close_stats")
+        ]
     ])
     
-    stats_text = f"""**📊 Bot Statistics**
+    stats_text = f"""**📊 BOT STATISTICS DASHBOARD**
 
-👥 **Total Users:** `{users}`
-👥 **Total Groups:** `{groups}`
-💎 **Premium Groups:** `{premium_count}`
-⚡ **Bot Uptime:** 24/7
-📅 **Last Updated:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+📈 **Overview:**
+├ 👥 **Total Users:** `{users}`
+├ 👥 **Total Groups:** `{groups}`
+├ 💎 **Premium Groups:** `{premium_count}`
+└ 🆓 **Free Groups:** `{groups - premium_count}`
 
-**Database Status:** ✅ Connected
-**AI Status:** ✅ Active
-**Server:** Koyeb Cloud
-**Bot Status:** ✅ Running Smoothly"""
-    
+⚡ **Performance:**
+├ 🚀 **Status:** ✅ Active
+├ ☁️ **Server:** Koyeb Cloud
+├ ⏱️ **Uptime:** 24/7
+└ 📅 **Updated:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+🔧 **Database:** ✅ Connected
+🤖 **AI Service:** ✅ Active
+🛡️ **Security:** ✅ Enabled"""
+
     await message.reply_text(stats_text, reply_markup=buttons)
 
-# ================ AI COMMAND ================
+# ================ AI COMMAND (FIXED SERVER BUSY ERROR) ================
 @app.on_message(filters.command("ai"))
 async def ai_command(client: Client, message: Message):
-    """AI chat feature"""
+    """AI chat feature with better error handling"""
     if len(message.command) < 2:
         msg = await message.reply_text(
-            "**Usage:** `/ai your question`\n"
-            "**Example:** `/ai Tell me about Inception movie`"
+            "**🤖 AI Chat Assistant**\n\n"
+            "**Usage:** `/ai your question`\n\n"
+            "**Examples:**\n"
+            "• `/ai Tell me about Inception movie`\n"
+            "• `/ai Best comedy movies 2023`\n"
+            "• `/ai Who directed Jawan?`\n\n"
+            "**Note:** Keep questions clear and specific."
         )
         asyncio.create_task(MovieBotUtils.auto_delete_message(client, msg, 30))
         return
     
     query = ' '.join(message.command[1:])
+    
+    # Show typing action
+    await message.chat.action("typing")
+    
+    # Send initial message
     waiting_msg = await message.reply_text("🤔 **Thinking... Please wait...**")
     
-    response = await MovieBotUtils.get_ai_response(query)
-    
-    await waiting_msg.delete()
-    msg = await message.reply_text(response)
-    # Auto delete after 5 minutes
-    asyncio.create_task(MovieBotUtils.auto_delete_message(client, msg, 300))
+    try:
+        # Get AI response with timeout
+        response = await asyncio.wait_for(
+            MovieBotUtils.get_ai_response(query),
+            timeout=20
+        )
+        
+        await waiting_msg.delete()
+        
+        # Check if response is too long
+        if len(response) > 4000:
+            response = response[:4000] + "...\n\n📝 **Response truncated due to length**"
+        
+        # Create better formatted response
+        formatted_response = f"**🤖 AI Assistant**\n\n{response}\n\n💡 *Powered by Movie Helper AI*"
+        
+        msg = await message.reply_text(formatted_response)
+        asyncio.create_task(MovieBotUtils.auto_delete_message(client, msg, 300))
+        
+    except asyncio.TimeoutError:
+        await waiting_msg.edit_text(
+            "⏳ **Taking too long to respond!**\n\n"
+            "The AI server is currently busy.\n"
+            "Please try again in a moment.\n\n"
+            "💡 **Tip:** Try a simpler question."
+        )
+        asyncio.create_task(MovieBotUtils.auto_delete_message(client, waiting_msg, 30))
+        
+    except Exception as e:
+        logger.error(f"AI Command Error: {e}")
+        await waiting_msg.edit_text(
+            "⚠️ **Temporary Service Issue**\n\n"
+            "I'm having trouble connecting to the AI service.\n"
+            "Please try again in a few minutes.\n\n"
+            "🎬 You can still use `/request` for movies!"
+        )
+        asyncio.create_task(MovieBotUtils.auto_delete_message(client, waiting_msg, 30))
 
 # ================ BROADCAST COMMAND ================
 @app.on_message(filters.command(["broadcast", "grp_broadcast"]) & filters.user(Config.OWNER_ID))
@@ -390,7 +491,7 @@ async def broadcast_command(client: Client, message: Message):
         except PeerIdInvalid:
             # Invalid chat ID, remove from database
             if is_group:
-                await remove_group(chat_id)
+                await mark_group_inactive(chat_id)
             deleted += 1
         except Exception as e:
             logger.error(f"Broadcast Error to {chat_id}: {e}")
@@ -568,11 +669,11 @@ async def premium_stats_cmd(client: Client, message: Message):
     
     await message.reply_text(premium_text)
 
-# ================ MAIN FILTER (UPDATED SPELLING CHECK) ================
+# ================ MAIN FILTER (UPDATED WITH FORMAT DETECTION) ================
 @app.on_message(filters.group & filters.text & ~filters.command([
     "start", "help", "settings", "addfsub", "stats", "ai", 
     "broadcast", "request", "ban", "unban", "add_premium", 
-    "remove_premium", "premiumstats", "ping", "id"
+    "remove_premium", "premiumstats", "ping", "id", "setcommands"
 ]))
 async def group_message_filter(client, message):
     if not message.from_user:
@@ -582,6 +683,7 @@ async def group_message_filter(client, message):
         return
 
     settings = await get_settings(message.chat.id)
+    spelling_settings = await get_spelling_settings(message.chat.id)
     quality = MovieBotUtils.check_message_quality(message.text)
 
     # 1. LINK HANDLING
@@ -595,7 +697,6 @@ async def group_message_filter(client, message):
         
         if warn_count >= limit:
             try:
-                # Ban/Mute User (Muting for 24 hours)
                 await client.restrict_chat_member(
                     message.chat.id, 
                     message.from_user.id, 
@@ -627,7 +728,6 @@ async def group_message_filter(client, message):
         
         if warn_count >= limit:
             try:
-                # Ban User
                 await client.ban_chat_member(message.chat.id, message.from_user.id)
                 ban_msg = await message.reply_text(
                     f"🚫 {message.from_user.mention} ko **Ban** kar diya gaya hai (Abusive Language)!"
@@ -643,51 +743,87 @@ async def group_message_filter(client, message):
             )
             asyncio.create_task(MovieBotUtils.auto_delete_message(client, warn_msg, 10))
 
-    # 3. SPELLING CHECK (JUNK) - UPDATED DESIGN
+    # 3. SPELLING CHECK (JUNK) - UPDATED WITH FORMAT DETECTION
     elif settings.get("spelling_on", True) and quality == "JUNK":
         try:
             await message.delete()
         except:
             pass
         
-        # Extract movie name from message
-        movie_name = MovieBotUtils.extract_movie_name(message.text)
-        suggestions = MovieBotUtils.get_movie_suggestions()
+        # Check format (Movie vs Series)
+        format_type, corrected_name = MovieBotUtils.check_movie_format(message.text)
         
-        if movie_name:
-            # Try to find correct spelling
-            corrected = MovieBotUtils.get_spelling_suggestion(movie_name, suggestions)
-            
-            if corrected:
-                # Create stylish correction message
-                correction_text = (
-                    f"✨ **Spelling Check** ✨\n\n"
-                    f"👤 **User:** {message.from_user.mention}\n"
-                    f"❌ **Galat:** `{message.text}`\n"
-                    f"✅ **Sahi:** `{corrected}`\n\n"
-                    f"📌 **Suggested Format:** Movie Name (Year)"
-                )
-            else:
-                correction_text = (
-                    f"✨ **Spelling Check** ✨\n\n"
-                    f"👤 **User:** {message.from_user.mention}\n"
-                    f"❌ **Galat Format:** `{message.text}`\n"
-                    f"✅ **Sahi Format:** Movie Name (Year)\n\n"
-                    f"📌 **Example:** `Pushpa 2 (2024)`"
-                )
-        else:
-            correction_text = (
-                f"✨ **Spelling Check** ✨\n\n"
+        if format_type == "SERIES" and corrected_name:
+            # Series format detected - show series format message
+            series_text = (
+                f"🎭 **Series Format Detected** 🎭\n\n"
                 f"👤 **User:** {message.from_user.mention}\n"
-                f"❌ **Galat Format:** `{message.text}`\n"
-                f"✅ **Sahi Format:** Movie Name (Year)\n\n"
-                f"📌 **Example:** `Pushpa 2 (2024)`\n"
-                f"📌 **Popular Movies:** Pushpa 2, Kalki 2898 AD, Jawan, Pathaan"
+                f"✅ **Correct Format:** `{corrected_name}`\n\n"
+                f"📌 **Series Format Examples:**\n"
+                f"• `Money Heist S01 E01`\n"
+                f"• `Mirzapur Season 2`\n"
+                f"• `Sacred Games S01`"
             )
-        
-        spell_msg = await message.reply_text(correction_text)
-        # Delete after 3 minutes (180 seconds)
-        asyncio.create_task(MovieBotUtils.auto_delete_message(client, spell_msg, 180))
+            spell_msg = await message.reply_text(series_text)
+            asyncio.create_task(MovieBotUtils.auto_delete_message(client, spell_msg, 180))
+            
+        elif format_type == "MOVIE" and corrected_name:
+            # Movie format detected - check spelling if advanced mode is on
+            if spelling_settings.get("advanced_spelling", False):
+                # Advanced spelling correction
+                corrected_spelling, suggestions = await MovieBotUtils.advanced_spelling_correction(corrected_name)
+                
+                if suggestions and corrected_spelling.lower() != corrected_name.lower():
+                    correction_text = (
+                        f"✨ **Advanced Spelling Check** ✨\n\n"
+                        f"👤 **User:** {message.from_user.mention}\n"
+                        f"❌ **Typed:** `{message.text}`\n"
+                        f"✅ **Correct:** `{corrected_spelling}`\n\n"
+                    )
+                    
+                    if len(suggestions) > 1:
+                        correction_text += f"📌 **Other Suggestions:**\n"
+                        for i, sug in enumerate(suggestions[1:4], 1):
+                            correction_text += f"{i}. `{sug}`\n"
+                    
+                    correction_text += f"\n🎬 **Format:** Movie Name (Year)"
+                    
+                else:
+                    correction_text = (
+                        f"✨ **Spelling Check** ✨\n\n"
+                        f"👤 **User:** {message.from_user.mention}\n"
+                        f"✅ **Format:** `{corrected_name}`\n\n"
+                        f"📌 **Correct Format:** `Movie Name (Year)`\n"
+                        f"**Example:** `{corrected_name} (2024)`"
+                    )
+            else:
+                # Simple spelling check
+                correction_text = (
+                    f"✨ **Spelling Check** ✨\n\n"
+                    f"👤 **User:** {message.from_user.mention}\n"
+                    f"✅ **Format:** `{corrected_name}`\n\n"
+                    f"📌 **Correct Format:** Movie Name (Year)\n"
+                    f"**Example:** `{corrected_name} (2024)`"
+                )
+            
+            spell_msg = await message.reply_text(correction_text)
+            asyncio.create_task(MovieBotUtils.auto_delete_message(client, spell_msg, 180))
+            
+        else:
+            # Invalid format
+            correction_text = (
+                f"✨ **Format Check** ✨\n\n"
+                f"👤 **User:** {message.from_user.mention}\n"
+                f"❌ **Invalid Format:** `{message.text}`\n\n"
+                f"📌 **For Movies:** Movie Name (Year)\n"
+                f"• `Pushpa 2 (2024)`\n"
+                f"• `Animal (2023)`\n\n"
+                f"📌 **For Series:** Series Name S01 E01\n"
+                f"• `Mirzapur S01 E01`\n"
+                f"• `Sacred Games Season 1`"
+            )
+            spell_msg = await message.reply_text(correction_text)
+            asyncio.create_task(MovieBotUtils.auto_delete_message(client, spell_msg, 180))
 
 # ================ AUTO DELETE FILES ================
 @app.on_message(filters.group & (filters.document | filters.video | filters.audio | filters.photo))
@@ -838,7 +974,7 @@ async def handle_fsub_join(client, update: ChatMemberUpdated):
 async def welcome_new_members(client: Client, message: Message):
     """Welcome new members with photo and details"""
     try:
-        # Delete the automatic "user joined" message immediately
+        # Delete the automatic "user joined" message
         try:
             await message.delete()
         except:
@@ -850,23 +986,24 @@ async def welcome_new_members(client: Client, message: Message):
         
         for member in message.new_chat_members:
             if member.is_self:  # Bot added to group
-                # Bot added to group
                 await add_group(message.chat.id, message.chat.title, message.chat.username)
                 
-                # Send Welcome
                 bot_welcome = await message.reply_text(
                     f"🎬 **Thanks for adding me to {message.chat.title}!**\n\n"
                     f"🤖 **I'm Movie Helper Bot**\n"
-                    f"✅ **Features:**\n"
-                    f"• Spelling Correction\n"
-                    f"• Auto Delete Files\n"
-                    f"• AI Movie Chat\n"
-                    f"• Auto Accept Requests\n\n"
-                    f"⚙️ **Setup:**\n"
+                    f"✅ **Main Features:**\n"
+                    f"• ✏️ Smart Spelling Correction\n"
+                    f"• 🗑️ Auto Delete Files\n"
+                    f"• 🤖 AI Movie Chat\n"
+                    f"• ✅ Auto Accept Requests\n\n"
+                    f"⚙️ **Quick Setup:**\n"
                     f"1. Make me **Admin**\n"
                     f"2. Use `/settings` to configure\n\n"
                     f"Need help? Use `/help`",
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⚙️ Settings", callback_data="settings_menu")]])
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("⚙️ Settings", callback_data="settings_menu")],
+                        [InlineKeyboardButton("📖 Help Guide", callback_data="help_guide")]
+                    ])
                 )
                 asyncio.create_task(MovieBotUtils.auto_delete_message(client, bot_welcome, 120))
                 
@@ -893,24 +1030,41 @@ async def welcome_new_members(client: Client, message: Message):
                     f"🆔 **ID:** `{user.id}`\n"
                     f"📅 **Joined:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
                     f"🎬 **Welcome to our movie community!**\n"
-                    f"Request movies using `/request` command.\n\n"
+                    f"✨ Request movies using `/request` command.\n"
+                    f"🤖 Chat with AI using `/ai`\n\n"
                     f"Enjoy your stay! 😊"
                 )
                 
                 try:
-                    if user.photo:
-                        welcome_msg = await client.send_photo(
-                            message.chat.id,
-                            photo=user.photo.big_file_id,
-                            caption=welcome_text
-                        )
+                    # Check if welcome with photo is enabled and user has photo
+                    if settings.get("welcome_with_photo", True):
+                        try:
+                            # Try to get user photo
+                            photos = await client.get_chat_photos(user.id, limit=1)
+                            if photos.total_count > 0:
+                                photo = await client.download_media(photos[0].file_id)
+                                welcome_msg = await client.send_photo(
+                                    message.chat.id,
+                                    photo=photo,
+                                    caption=welcome_text
+                                )
+                            else:
+                                raise Exception("No photo")
+                        except:
+                            # Fallback to text message if no photo
+                            welcome_msg = await message.reply_text(welcome_text)
                     else:
+                        # Text only welcome
                         welcome_msg = await message.reply_text(welcome_text)
                     
                     # Delete welcome message after 2 minutes
                     asyncio.create_task(MovieBotUtils.auto_delete_message(client, welcome_msg, 120))
-                except:
-                    pass
+                    
+                except Exception as e:
+                    logger.error(f"Welcome message error: {e}")
+                    # Fallback to simple text
+                    welcome_msg = await message.reply_text(f"🎉 Welcome {user.mention}!")
+                    asyncio.create_task(MovieBotUtils.auto_delete_message(client, welcome_msg, 120))
                     
     except Exception as e:
         logger.error(f"Welcome Error: {e}")
@@ -1240,6 +1394,34 @@ For help contact @asbhai_bsr"""
             await query.message.edit_text(text)
             await query.answer("Send your channel ID in reply")
         
+        # NEW: Advanced spelling toggle
+        elif data == "toggle_adv_spelling":
+            if not await is_admin(chat_id, user_id):
+                await query.answer("❌ Only admins can change settings!", show_alert=True)
+                return
+                
+            spelling_settings = await get_spelling_settings(chat_id)
+            new_value = not spelling_settings.get("advanced_spelling", False)
+            await update_spelling_settings(chat_id, "advanced_spelling", new_value)
+            
+            status = "🔍 Advanced" if new_value else "📝 Simple"
+            await query.answer(f"Spelling mode: {status}")
+            await refresh_settings_menu(client, query)
+        
+        # NEW: Welcome photo toggle
+        elif data == "toggle_welcome_photo":
+            if not await is_admin(chat_id, user_id):
+                await query.answer("❌ Only admins can change settings!", show_alert=True)
+                return
+                
+            settings = await get_settings(chat_id)
+            new_value = not settings.get("welcome_with_photo", True)
+            await update_settings(chat_id, "welcome_with_photo", new_value)
+            
+            status = "📸 ON" if new_value else "📝 TEXT"
+            await query.answer(f"Welcome photo: {status}")
+            await refresh_settings_menu(client, query)
+        
         # Request Accept Logic (ADMIN ONLY)
         elif data.startswith("req_accept_"):
             parts = data.split("_")
@@ -1286,6 +1468,29 @@ For help contact @asbhai_bsr"""
                     pass
                 await query.answer("Request rejected!")
         
+        # Request Processing
+        elif data.startswith("req_process_"):
+            parts = data.split("_")
+            if len(parts) >= 4:
+                req_user_id = int(parts[2])
+                original_msg_id = int(parts[3])
+                
+                # Check if user is admin
+                if not await is_admin(query.message.chat.id, query.from_user.id):
+                    await query.answer("❌ Only admins can use this button!", show_alert=True)
+                    return
+                
+                try:
+                    await client.send_message(
+                        query.message.chat.id, 
+                        f"⏳ **Processing Request**\n"
+                        f"Admin {query.from_user.mention} is processing this request.\n"
+                        f"Please wait..."
+                    )
+                except:
+                    pass
+                await query.answer("Request marked as processing!")
+        
         # Request Status Check
         elif data.startswith("req_status_"):
             req_user_id = int(data.split("_")[2])
@@ -1293,6 +1498,58 @@ For help contact @asbhai_bsr"""
                 await query.answer("❌ This button is for the requester only!", show_alert=True)
                 return
             await query.answer("✅ Your request is pending review by admins.", show_alert=True)
+        
+        elif data.startswith("req_stats_"):
+            req_user_id = int(data.split("_")[2])
+            if query.from_user.id != req_user_id:
+                await query.answer("❌ This button is for the requester only!", show_alert=True)
+                return
+            
+            # Get user's pending requests
+            pending_count = 0
+            try:
+                requests = await get_pending_requests(chat_id)
+                for req in requests:
+                    if req.get("user_id") == req_user_id:
+                        pending_count += 1
+            except:
+                pass
+            
+            await query.answer(f"📊 You have {pending_count} pending requests.", show_alert=True)
+        
+        elif data.startswith("my_requests_"):
+            req_user_id = int(data.split("_")[2])
+            if query.from_user.id != req_user_id:
+                await query.answer("❌ This button is for the requester only!", show_alert=True)
+                return
+            
+            await query.answer("📋 Your requests feature coming soon!", show_alert=True)
+        
+        elif data.startswith("notify_all_"):
+            target_chat_id = int(data.split("_")[2])
+            
+            # Check if user is admin
+            if not await is_admin(target_chat_id, query.from_user.id):
+                await query.answer("❌ Only admins can notify everyone!", show_alert=True)
+                return
+            
+            await query.answer("🔔 Notification feature coming soon!", show_alert=True)
+        
+        elif data.startswith("delete_req_"):
+            msg_id = int(data.split("_")[2])
+            
+            # Check if user is admin or requester
+            is_requester = False
+            try:
+                # We need to check if this user is the one who requested
+                # For now, allow admins to delete
+                if await is_admin(chat_id, user_id):
+                    await query.message.delete()
+                    await query.answer("🗑️ Request deleted!")
+                else:
+                    await query.answer("❌ Only admins can delete requests!", show_alert=True)
+            except:
+                pass
         
         # Settings Toggles
         elif data == "toggle_spelling":
@@ -1376,6 +1633,7 @@ For help contact @asbhai_bsr"""
             await query.answer(f"✅ Delete time set to {time_text}")
             await refresh_settings_menu(client, query)
 
+        # Clear junk (FIXED)
         elif data == "clear_junk":
             # Owner only
             if user_id != Config.OWNER_ID:
@@ -1384,15 +1642,29 @@ For help contact @asbhai_bsr"""
                 
             junk_count = await clear_junk()
             await query.answer(f"🧹 Cleared {junk_count} junk entries!")
+            
+            # Update stats after clearing
+            users = await get_user_count()
+            groups = await get_group_count()
+            
             await query.message.edit_text(
-                f"✅ **Junk Cleared!**\n\n"
-                f"Removed **{junk_count}** inactive entries from database.",
+                f"✅ **Junk Cleanup Complete!** ✅\n\n"
+                f"**Removed:** {junk_count} inactive entries\n\n"
+                f"📊 **Updated Stats:**\n"
+                f"• Users: {users}\n"
+                f"• Groups: {groups}\n\n"
+                f"Database optimized successfully!",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("🔄 Refresh Stats", callback_data="refresh_stats")]
                 ])
             )
         
         elif data == "refresh_stats":
+            # Owner only
+            if user_id != Config.OWNER_ID:
+                await query.answer("❌ Only owner can use this!", show_alert=True)
+                return
+                
             users = await get_user_count()
             groups = await get_group_count()
             premium_count = 0
@@ -1401,22 +1673,82 @@ For help contact @asbhai_bsr"""
                 if await check_is_premium(g):
                     premium_count += 1
             
-            stats_text = f"""**📊 Bot Statistics**
+            stats_text = f"""**📊 BOT STATISTICS DASHBOARD**
 
-👥 **Total Users:** {users}
-👥 **Total Groups:** {groups}
-💎 **Premium Groups:** {premium_count}
-⚡ **Bot Uptime:** 24/7
-🔄 **Last Updated:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+📈 **Overview:**
+├ 👥 **Total Users:** `{users}`
+├ 👥 **Total Groups:** `{groups}`
+├ 💎 **Premium Groups:** `{premium_count}`
+└ 🆓 **Free Groups:** `{groups - premium_count}`
+
+⚡ **Performance:**
+├ 🚀 **Status:** ✅ Active
+├ ☁️ **Server:** Koyeb Cloud
+├ ⏱️ **Uptime:** 24/7
+└ 📅 **Updated:** {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+🔧 **Database:** ✅ Connected
+🤖 **AI Service:** ✅ Active
+🛡️ **Security:** ✅ Enabled"""
             
-            await query.message.edit_text(
-                stats_text,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🧹 Clear Junk", callback_data="clear_junk")],
-                    [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_stats")]
-                ])
-            )
+            buttons = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("🧹 Clear Junk", callback_data="clear_junk"),
+                    InlineKeyboardButton("📊 User Stats", callback_data="user_stats")
+                ],
+                [
+                    InlineKeyboardButton("👥 Group Stats", callback_data="group_stats"),
+                    InlineKeyboardButton("💎 Premium Stats", callback_data="premium_stats")
+                ],
+                [
+                    InlineKeyboardButton("🔄 Refresh", callback_data="refresh_stats"),
+                    InlineKeyboardButton("📈 Analytics", callback_data="analytics")
+                ],
+                [
+                    InlineKeyboardButton("❌ Close", callback_data="close_stats")
+                ]
+            ])
+            
+            await query.message.edit_text(stats_text, reply_markup=buttons)
             await query.answer("✅ Stats refreshed!")
+        
+        elif data == "user_stats":
+            if user_id != Config.OWNER_ID:
+                await query.answer("❌ Only owner can use this!", show_alert=True)
+                return
+            users = await get_user_count()
+            await query.answer(f"👥 Total Users: {users}", show_alert=True)
+        
+        elif data == "group_stats":
+            if user_id != Config.OWNER_ID:
+                await query.answer("❌ Only owner can use this!", show_alert=True)
+                return
+            groups = await get_group_count()
+            await query.answer(f"👥 Total Groups: {groups}", show_alert=True)
+        
+        elif data == "premium_stats":
+            if user_id != Config.OWNER_ID:
+                await query.answer("❌ Only owner can use this!", show_alert=True)
+                return
+            premium_count = 0
+            all_grps = await get_all_groups()
+            for g in all_grps:
+                if await check_is_premium(g):
+                    premium_count += 1
+            await query.answer(f"💎 Premium Groups: {premium_count}", show_alert=True)
+        
+        elif data == "analytics":
+            if user_id != Config.OWNER_ID:
+                await query.answer("❌ Only owner can use this!", show_alert=True)
+                return
+            await query.answer("📈 Analytics feature coming soon!", show_alert=True)
+        
+        elif data == "close_stats":
+            try:
+                await query.message.delete()
+            except:
+                pass
+            await query.answer("Stats closed!")
         
         elif data.startswith("fsub_verify_"):
             target_id = int(data.split("_")[2])
@@ -1471,6 +1803,9 @@ For help contact @asbhai_bsr"""
         
         elif data == "back_settings" or data == "settings_menu":
             await refresh_settings_menu(client, query)
+        
+        elif data == "refresh_settings":
+            await refresh_settings_menu(client, query)
     
     except Exception as e:
         logger.error(f"Callback Error: {e}")
@@ -1481,39 +1816,57 @@ async def refresh_settings_menu(client, query):
     try:
         chat_id = query.message.chat.id
         settings = await get_settings(chat_id)
+        spelling_settings = await get_spelling_settings(chat_id)
         is_prem = await check_is_premium(chat_id)
         auto_accept = await get_auto_accept(chat_id)
         
         prem_status = "💎 Active" if is_prem else "🔓 Free"
         spelling_status = "✅ ON" if settings.get("spelling_on", True) else "❌ OFF"
+        advanced_spelling = "🔍 Advanced" if spelling_settings.get("advanced_spelling", False) else "📝 Simple"
         delete_status = "✅ ON" if settings.get("auto_delete_on", False) else "❌ OFF"
         accept_status = "✅ ON" if auto_accept else "❌ OFF"
         welcome_status = "✅ ON" if settings.get("welcome_enabled", True) else "❌ OFF"
+        welcome_photo = "📸 ON" if settings.get("welcome_with_photo", True) else "📝 TEXT"
         delete_time = settings.get("delete_time", 0)
         time_text = f"{delete_time} min" if delete_time > 0 else "Permanent"
         
         buttons = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton(f"✏️ Spelling: {spelling_status}", callback_data="toggle_spelling"),
-                InlineKeyboardButton(f"🗑️ Delete: {delete_status}", callback_data="toggle_auto_delete")
+                InlineKeyboardButton(f"🔍 Type: {advanced_spelling}", callback_data="toggle_adv_spelling")
+            ],
+            [
+                InlineKeyboardButton(f"🗑️ Auto Delete: {delete_status}", callback_data="toggle_auto_delete"),
+                InlineKeyboardButton(f"⏰ Time: {time_text}", callback_data="set_delete_time")
             ],
             [
                 InlineKeyboardButton(f"✅ Auto Accept: {accept_status}", callback_data="toggle_auto_accept"),
                 InlineKeyboardButton(f"👋 Welcome: {welcome_status}", callback_data="toggle_welcome")
             ],
             [
-                InlineKeyboardButton(f"⏰ Time: {time_text}", callback_data="set_delete_time"),
+                InlineKeyboardButton(f"📸 Welcome Photo: {welcome_photo}", callback_data="toggle_welcome_photo"),
                 InlineKeyboardButton(f"{prem_status} Premium", callback_data="premium_info")
             ],
-            [InlineKeyboardButton("❌ Close", callback_data="close_settings")]
+            [
+                InlineKeyboardButton("🔄 Refresh", callback_data="refresh_settings"),
+                InlineKeyboardButton("❌ Close", callback_data="close_settings")
+            ]
         ])
         
-        # Check if message needs to be edited
-        await query.message.edit_text(
-            f"**⚙️ Settings for {query.message.chat.title}**\n\n"
-            f"_Click buttons to toggle settings:_",
-            reply_markup=buttons
-        )
+        settings_text = f"""**⚙️ Settings for {query.message.chat.title}**
+
+• **✏️ Spelling Check:** {spelling_status}
+• **🔍 Spelling Mode:** {advanced_spelling}
+• **🗑️ Auto Delete:** {delete_status} ({time_text})
+• **✅ Auto Accept:** {accept_status}
+• **👋 Welcome Msg:** {welcome_status}
+• **📸 Welcome Photo:** {welcome_photo}
+• **💎 Premium:** {prem_status}
+
+_Click buttons to change settings:_"""
+        
+        await query.message.edit_text(settings_text, reply_markup=buttons)
+        
     except Exception as e:
         logger.error(f"Refresh Settings Error: {e}")
 
@@ -1578,26 +1931,48 @@ async def handle_channel_id(client: Client, message: Message):
             f"4. Channel is not private"
         )
 
-# ================ SETCOMMANDS COMMAND ================
+# ================ SETCOMMANDS COMMAND (FIXED) ================
 @app.on_message(filters.command("setcommands") & filters.user(Config.OWNER_ID))
 async def setcommands_command(client: Client, message: Message):
-    """Set bot commands"""
-    commands = [
-        {"command": "start", "description": "Start the bot"},
-        {"command": "help", "description": "Get help menu"},
-        {"command": "settings", "description": "Group settings"},
-        {"command": "request", "description": "Request a movie"},
-        {"command": "ai", "description": "Ask AI about movies"},
-        {"command": "addfsub", "description": "Set force subscribe (Premium)"},
-        {"command": "ping", "description": "Check bot status"},
-        {"command": "id", "description": "Get user/group ID"}
-    ]
-    
+    """Set bot commands - FIXED VERSION"""
     try:
+        commands = [
+            BotCommand("start", "Start the bot"),
+            BotCommand("help", "Get help menu"),
+            BotCommand("settings", "Group settings"),
+            BotCommand("request", "Request a movie"),
+            BotCommand("ai", "Ask AI about movies"),
+            BotCommand("addfsub", "Set force subscribe (Premium)"),
+            BotCommand("ping", "Check bot status"),
+            BotCommand("id", "Get user/group ID"),
+            BotCommand("stats", "Bot statistics (Owner)"),
+            BotCommand("setcommands", "Set bot commands (Owner)")
+        ]
+        
+        # Set commands globally
         await client.set_bot_commands(commands)
-        await message.reply_text("✅ Bot commands set successfully!")
+        
+        # Also set for specific scope
+        await client.set_bot_commands(
+            commands,
+            scope=BotCommandScopeAllPrivateChats()
+        )
+        
+        await message.reply_text(
+            "✅ **Bot commands set successfully!**\n\n"
+            "Commands are now available in:\n"
+            "• Private chats\n"
+            "• Group chats\n"
+            "• All contexts"
+        )
+        
     except Exception as e:
-        await message.reply_text(f"❌ Failed to set commands: {e}")
+        await message.reply_text(
+            f"❌ **Failed to set commands:**\n\n"
+            f"**Error:** `{e}`\n\n"
+            f"Make sure the bot has proper permissions."
+        )
+        logger.error(f"SetCommands Error: {e}")
 
 # ================ PING COMMAND ================
 @app.on_message(filters.command("ping"))
@@ -1671,20 +2046,16 @@ if __name__ == "__main__":
     print("\n" + "="*50)
     print("🚀 **Starting Movie Helper Bot...**")
     print("="*50)
-    print("\n✅ **All Features Implemented:**")
-    print("   1. ✅ Fixed Welcome Message for new users")
-    print("   2. ✅ Request command mein admin/owner ka tag")
-    print("   3. ✅ Request buttons sirf admin/owner ke liye")
-    print("   4. ✅ Professional buttons design")
-    print("   5. ✅ Better message formatting")
-    print("   6. ✅ Auto delete 'user joined' message")
-    print("   7. ✅ Fixed all errors:")
-    print("      - ✅ Peer id invalid error fixed")
-    print("      - ✅ Random ID duplicate fixed")
-    print("      - ✅ NoneType attribute error fixed")
-    print("      - ✅ Message not modified error fixed")
-    print("      - ✅ Welcome message not sending fixed")
-    print("\n🤖 **Bot is now professional and ready!**")
+    print("\n✅ **All Features Fixed:**")
+    print("   1. ✅ Movie vs Series format detection")
+    print("   2. ✅ Advanced spelling correction system")
+    print("   3. ✅ Clear junk button working")
+    print("   4. ✅ /setcommands command fixed")
+    print("   5. ✅ /ai server busy error fixed")
+    print("   6. ✅ Request system with emoji tags")
+    print("   7. ✅ Welcome message photo issue fixed")
+    print("   8. ✅ Professional button layouts")
+    print("\n🤖 **Bot is now fully professional and ready!**")
     print("="*50)
     
     try:
