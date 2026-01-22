@@ -6,6 +6,8 @@ import difflib
 from config import Config
 from typing import Optional
 from urllib.parse import quote
+# Ye line add ki gayi hai error fix karne ke liye:
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 class MovieBotUtils:
     
@@ -468,4 +470,4 @@ class MovieBotUtils:
             "Sooryavanshi 2021",
             "Tenet 2020",
             "Avengers Endgame 2019"
-    ]
+        ]
