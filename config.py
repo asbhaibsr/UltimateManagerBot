@@ -28,6 +28,10 @@ class Config:
     BROADCAST_DELAY = 0.5  # Seconds between broadcasts
     SPELLING_CHECK_TIMEOUT = 10  # Timeout for spelling checks
     
+    # --- ADDED THESE LINES TO FIX CRASH ---
+    MAX_WARNINGS = 3  # For abuse/link warnings
+    CLEANUP_INTERVAL = 3600 # 1 Hour for background tasks
+    
     # Force Sub Channel
     FORCE_SUB_CHANNEL = os.getenv("FORCE_SUB_CHANNEL", "@asbhai_bsr")
     
