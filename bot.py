@@ -824,13 +824,21 @@ async def auto_delete_files(client: Client, message: Message):
     except:
         pass
 
-# ================ FORCE SUBSCRIBE (IMPROVED) ================
+# ================ FORCE SUBSCRIBE (FIXED NO LOOP) ================
 @app.on_chat_member_updated()
 async def handle_fsub_join(client, update: ChatMemberUpdated):
+    # 1. Stop Loop: Ignore updates caused by the Bot itself
+    if update.from_user and update.from_user.id == (await client.get_me()).id:
+        return
+
+    # 2. Stop Loop: Ignore if it's not a new join (e.g., just a permission change)
+    if update.old_chat_member and update.old_chat_member.status not in [ChatMemberStatus.LEFT, ChatMemberStatus.BANNED]:
+        return
+
     if not update.new_chat_member or update.new_chat_member.user.is_bot:
         return
 
-    # Double Message Fix
+    # Double Message Fix (Debounce)
     user_id = update.new_chat_member.user.id
     chat_id = update.chat.id
     cache_key = f"{user_id}_{chat_id}"
@@ -889,11 +897,15 @@ async def handle_fsub_join(client, update: ChatMemberUpdated):
             return
             
     except UserNotParticipant:
+        pass # Proceed to mute logic below
+    except Exception as e:
+        logger.error(f"FSub Check Error: {e}")
+        return
+
+    # If user hasn't joined:
+    try:
         # User hasn't joined, mute them
-        try:
-            await client.restrict_chat_member(chat_id, user_id, ChatPermissions(can_send_messages=False))
-        except:
-            pass
+        await client.restrict_chat_member(chat_id, user_id, ChatPermissions(can_send_messages=False))
         
         # Get Channel Info
         try:
@@ -933,13 +945,16 @@ async def handle_fsub_join(client, update: ChatMemberUpdated):
             else:
                 fsub_msg = await client.send_message(chat_id, welcome_txt, reply_markup=buttons)
             
-            # Store message ID for auto-delete
             asyncio.create_task(MovieBotUtils.auto_delete_message(client, fsub_msg, 300))
-        except:
+        except FloodWait as e:
+            # If flood wait happens, wait and retry text only
+            await asyncio.sleep(e.value)
             fsub_msg = await client.send_message(chat_id, welcome_txt, reply_markup=buttons)
-            asyncio.create_task(MovieBotUtils.auto_delete_message(client, fsub_msg, 300))
+        except Exception as e:
+            logger.error(f"FSub Send Error: {e}")
+
     except Exception as e:
-        logger.error(f"FSub Error: {e}")
+        logger.error(f"FSub Action Error: {e}")
 
 # ================ WELCOME MESSAGE FOR NEW MEMBERS (FIXED) ================
 @app.on_message(filters.new_chat_members)
