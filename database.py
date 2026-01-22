@@ -2,9 +2,6 @@ import motor.motor_asyncio
 import datetime
 from datetime import timedelta
 from config import Config
-import logging
-
-logger = logging.getLogger(__name__)
 
 # MongoDB connection
 client = motor.motor_asyncio.AsyncIOMotorClient(Config.MONGO_DB_URL)
@@ -18,33 +15,7 @@ force_sub_col = db["force_sub"]
 warnings_col = db["warnings"]
 auto_accept_col = db["auto_accept"]
 movie_requests_col = db["movie_requests"]
-spelling_settings_col = db["spelling_settings"]  # NEW: For advanced spelling
-
-# ================ NEW: SPELLING SETTINGS ================
-async def get_spelling_settings(chat_id):
-    """Get advanced spelling settings"""
-    settings = await spelling_settings_col.find_one({"_id": chat_id})
-    if not settings:
-        default_settings = {
-            "_id": chat_id,
-            "advanced_spelling": False,  # Simple vs Advanced spelling check
-            "auto_correct": True,  # Auto suggest corrections
-            "sources": ["local", "omdb"]  # Sources to use
-        }
-        try:
-            await spelling_settings_col.insert_one(default_settings)
-        except:
-            pass
-        return default_settings
-    return settings
-
-async def update_spelling_settings(chat_id, key, value):
-    """Update spelling settings"""
-    await spelling_settings_col.update_one(
-        {"_id": chat_id},
-        {"$set": {key: value}},
-        upsert=True
-    )
+deleted_data_col = db["deleted_data"]  # New collection for tracking
 
 # ================ USER FUNCTIONS ================
 async def add_user(user_id, username=None, first_name=None, last_name=None):
@@ -56,8 +27,8 @@ async def add_user(user_id, username=None, first_name=None, last_name=None):
                 "first_name": first_name,
                 "last_name": last_name,
                 "banned": False,
-                "last_seen": datetime.datetime.now(),
-                "joined_at": datetime.datetime.now()
+                "joined_at": datetime.datetime.now(),
+                "last_seen": datetime.datetime.now()
             }
         },
         upsert=True
@@ -77,6 +48,7 @@ async def get_user_count():
 
 async def ban_user(user_id):
     await users_col.update_one({"_id": user_id}, {"$set": {"banned": True}})
+    await log_deletion("user", user_id, "Banned by admin")
 
 async def unban_user(user_id):
     await users_col.update_one({"_id": user_id}, {"$set": {"banned": False}})
@@ -90,13 +62,14 @@ async def add_group(group_id, title=None, username=None):
         "username": username,
         "active": True,
         "updated_at": datetime.datetime.now(),
-        "last_check": datetime.datetime.now()  # For junk cleanup
+        "last_active": datetime.datetime.now()
     }
     
     if not group:
         update_data["added_at"] = datetime.datetime.now()
         update_data["is_premium"] = False
         update_data["premium_expiry"] = None
+        update_data["bot_removed"] = False
     
     await groups_col.update_one(
         {"_id": group_id},
@@ -117,57 +90,15 @@ async def get_group_count():
     return await groups_col.count_documents({})
 
 async def remove_group(group_id):
+    group = await get_group(group_id)
+    if group:
+        await log_deletion("group", group_id, group.get("title", "Unknown"))
     await groups_col.delete_one({"_id": group_id})
 
-# ================ CLEAR JUNK FUNCTION (FIXED) ================
-async def clear_junk():
-    """Actually clear junk data: banned users and inactive groups"""
-    deleted_count = 0
-    
-    try:
-        # 1. Delete banned users (more than 30 days old)
-        cutoff_date = datetime.datetime.now() - timedelta(days=30)
-        result_users = await users_col.delete_many({
-            "banned": True,
-            "last_seen": {"$lt": cutoff_date}
-        })
-        deleted_count += result_users.deleted_count
-        logger.info(f"Cleared {result_users.deleted_count} banned users")
-        
-        # 2. Delete groups where bot was removed (inactive for 7 days)
-        cutoff_group = datetime.datetime.now() - timedelta(days=7)
-        result_groups = await groups_col.delete_many({
-            "active": False,
-            "last_check": {"$lt": cutoff_group}
-        })
-        deleted_count += result_groups.deleted_count
-        logger.info(f"Cleared {result_groups.deleted_count} inactive groups")
-        
-        # 3. Clean old warnings (older than 30 days)
-        result_warnings = await warnings_col.delete_many({
-            "created_at": {"$lt": cutoff_date}
-        })
-        logger.info(f"Cleared {result_warnings.deleted_count} old warnings")
-        
-        # 4. Clean old movie requests (completed older than 15 days)
-        cutoff_requests = datetime.datetime.now() - timedelta(days=15)
-        result_requests = await movie_requests_col.delete_many({
-            "status": {"$in": ["completed", "rejected"]},
-            "updated_at": {"$lt": cutoff_requests}
-        })
-        logger.info(f"Cleared {result_requests.deleted_count} old requests")
-        
-        return deleted_count
-        
-    except Exception as e:
-        logger.error(f"Clear junk error: {e}")
-        return 0
-
-async def mark_group_inactive(group_id):
-    """Mark group as inactive (bot removed)"""
+async def mark_bot_removed(group_id, status=True):
     await groups_col.update_one(
         {"_id": group_id},
-        {"$set": {"active": False, "last_check": datetime.datetime.now()}}
+        {"$set": {"bot_removed": status, "removed_at": datetime.datetime.now()}}
     )
 
 # ================ PREMIUM FUNCTIONS ================
@@ -217,13 +148,12 @@ async def get_settings(chat_id):
         default_settings = {
             "_id": chat_id,
             "spelling_on": True,
-            "advanced_spelling": False,  # NEW: Advanced spelling toggle
             "auto_delete_on": False,
             "delete_time": 0,
             "welcome_enabled": True,
             "force_sub_enabled": False,
             "ai_enabled": True,
-            "welcome_with_photo": True  # NEW: Welcome with photo option
+            "ai_chat_on": False  # New: Group AI chat toggle
         }
         try:
             await settings_col.insert_one(default_settings)
@@ -239,7 +169,7 @@ async def update_settings(chat_id, key, value):
         upsert=True
     )
 
-# ================ OTHER FUNCTIONS (Same as before) ================
+# ================ FORCE SUB FUNCTIONS ================
 async def set_force_sub(chat_id, channel_id):
     await force_sub_col.update_one(
         {"_id": chat_id},
@@ -253,6 +183,72 @@ async def get_force_sub(chat_id):
 async def remove_force_sub(chat_id):
     await force_sub_col.delete_one({"_id": chat_id})
 
+# ================ CLEAR JUNK FUNCTION (FIXED) ================
+async def clear_junk():
+    """Clear all junk data: banned users, removed bots, inactive groups"""
+    deleted_count = {
+        "banned_users": 0,
+        "removed_bots": 0,
+        "inactive_groups": 0
+    }
+    
+    try:
+        # 1. Delete banned users
+        result = await users_col.delete_many({"banned": True})
+        deleted_count["banned_users"] = result.deleted_count
+        
+        # 2. Mark and count groups where bot was removed
+        three_months_ago = datetime.datetime.now() - timedelta(days=90)
+        result = await groups_col.update_many(
+            {
+                "$or": [
+                    {"bot_removed": True},
+                    {"last_active": {"$lt": three_months_ago}},
+                    {"active": False}
+                ]
+            },
+            {"$set": {"marked_for_deletion": True}}
+        )
+        
+        # Actually delete them
+        result = await groups_col.delete_many({"marked_for_deletion": True})
+        deleted_count["inactive_groups"] = result.deleted_count
+        
+        # 3. Clean warnings older than 30 days
+        one_month_ago = datetime.datetime.now() - timedelta(days=30)
+        result = await warnings_col.delete_many({"last_warning": {"$lt": one_month_ago}})
+        
+        # 4. Clean old movie requests (completed older than 7 days)
+        week_ago = datetime.datetime.now() - timedelta(days=7)
+        result = await movie_requests_col.delete_many({
+            "status": {"$in": ["completed", "rejected"]},
+            "updated_at": {"$lt": week_ago}
+        })
+        
+        # Log the cleanup
+        await log_deletion(
+            "system", 
+            "cleanup", 
+            f"Cleared {deleted_count['banned_users']} banned users, {deleted_count['inactive_groups']} inactive groups"
+        )
+        
+        return deleted_count
+        
+    except Exception as e:
+        print(f"Clear junk error: {e}")
+        return deleted_count
+
+# ================ LOG DELETION FUNCTION ================
+async def log_deletion(deletion_type, item_id, item_name):
+    """Log all deletions for tracking"""
+    await deleted_data_col.insert_one({
+        "type": deletion_type,
+        "item_id": item_id,
+        "item_name": item_name,
+        "deleted_at": datetime.datetime.now()
+    })
+
+# ================ WARNING SYSTEM ================
 async def get_warnings(chat_id, user_id):
     data = await warnings_col.find_one({"chat_id": chat_id, "user_id": user_id})
     return data["count"] if data else 0
@@ -262,7 +258,7 @@ async def add_warning(chat_id, user_id):
     count = (data["count"] + 1) if data else 1
     await warnings_col.update_one(
         {"chat_id": chat_id, "user_id": user_id},
-        {"$set": {"count": count, "created_at": datetime.datetime.now()}},
+        {"$set": {"count": count, "last_warning": datetime.datetime.now()}},
         upsert=True
     )
     return count
@@ -270,6 +266,7 @@ async def add_warning(chat_id, user_id):
 async def reset_warnings(chat_id, user_id):
     await warnings_col.delete_one({"chat_id": chat_id, "user_id": user_id})
 
+# ================ AUTO ACCEPT SYSTEM ================
 async def set_auto_accept(chat_id, status: bool):
     await auto_accept_col.update_one(
         {"_id": chat_id},
@@ -281,14 +278,14 @@ async def get_auto_accept(chat_id):
     data = await auto_accept_col.find_one({"_id": chat_id})
     return data.get("enabled", False) if data else False
 
+# ================ MOVIE REQUESTS ================
 async def add_movie_request(chat_id, user_id, movie_name):
     await movie_requests_col.insert_one({
         "chat_id": chat_id,
         "user_id": user_id,
         "movie_name": movie_name,
         "status": "pending",
-        "requested_at": datetime.datetime.now(),
-        "updated_at": datetime.datetime.now()
+        "requested_at": datetime.datetime.now()
     })
 
 async def get_pending_requests(chat_id):
@@ -301,4 +298,26 @@ async def update_request_status(request_id, status):
     await movie_requests_col.update_one(
         {"_id": request_id},
         {"$set": {"status": status, "updated_at": datetime.datetime.now()}}
-                   )
+    )
+
+# ================ GET BOT STATS ================
+async def get_bot_stats():
+    """Get comprehensive bot statistics"""
+    stats = {
+        "total_users": await users_col.count_documents({"banned": False}),
+        "total_groups": await groups_col.count_documents({}),
+        "banned_users": await users_col.count_documents({"banned": True}),
+        "premium_groups": 0,
+        "active_groups": 0,
+        "pending_requests": await movie_requests_col.count_documents({"status": "pending"}),
+        "total_requests": await movie_requests_col.count_documents({})
+    }
+    
+    # Count premium groups
+    async for group in groups_col.find({}):
+        if group.get("is_premium", False):
+            stats["premium_groups"] += 1
+        if group.get("active", False):
+            stats["active_groups"] += 1
+    
+    return stats
