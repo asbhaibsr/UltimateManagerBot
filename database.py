@@ -148,18 +148,24 @@ async def get_settings(chat_id):
         default_settings = {
             "_id": chat_id,
             "spelling_on": True,
+            "spelling_mode": "simple",  # NEW: Options: 'simple' or 'advanced'
             "auto_delete_on": False,
             "delete_time": 0,
             "welcome_enabled": True,
             "force_sub_enabled": False,
             "ai_enabled": True,
-            "ai_chat_on": False  # New: Group AI chat toggle
+            "ai_chat_on": False
         }
         try:
             await settings_col.insert_one(default_settings)
         except:
             pass
         return default_settings
+    
+    # Ensure new keys exist if updating old DB
+    if "spelling_mode" not in settings:
+        settings["spelling_mode"] = "simple"
+        
     return settings
 
 async def update_settings(chat_id, key, value):
@@ -183,7 +189,7 @@ async def get_force_sub(chat_id):
 async def remove_force_sub(chat_id):
     await force_sub_col.delete_one({"_id": chat_id})
 
-# ================ CLEAR JUNK FUNCTION (FIXED) ================
+# ================ CLEAR JUNK FUNCTION (FIXED & IMPROVED) ================
 async def clear_junk():
     """Clear all junk data: banned users, removed bots, inactive groups"""
     deleted_count = {
@@ -193,44 +199,24 @@ async def clear_junk():
     }
     
     try:
-        # 1. Delete banned users
+        # 1. Delete banned users from DB
         result = await users_col.delete_many({"banned": True})
         deleted_count["banned_users"] = result.deleted_count
         
-        # 2. Mark and count groups where bot was removed
-        three_months_ago = datetime.datetime.now() - timedelta(days=90)
-        result = await groups_col.update_many(
-            {
-                "$or": [
-                    {"bot_removed": True},
-                    {"last_active": {"$lt": three_months_ago}},
-                    {"active": False}
-                ]
-            },
-            {"$set": {"marked_for_deletion": True}}
-        )
-        
-        # Actually delete them
-        result = await groups_col.delete_many({"marked_for_deletion": True})
+        # 2. Check Groups (Complex Logic simplified)
+        # Groups marked as deleted or where bot was removed
+        result = await groups_col.delete_many({"bot_removed": True})
         deleted_count["inactive_groups"] = result.deleted_count
         
-        # 3. Clean warnings older than 30 days
-        one_month_ago = datetime.datetime.now() - timedelta(days=30)
-        result = await warnings_col.delete_many({"last_warning": {"$lt": one_month_ago}})
-        
-        # 4. Clean old movie requests (completed older than 7 days)
+        # 3. Clean old warnings (older than 7 days is enough)
         week_ago = datetime.datetime.now() - timedelta(days=7)
-        result = await movie_requests_col.delete_many({
+        await warnings_col.delete_many({"last_warning": {"$lt": week_ago}})
+        
+        # 4. Clean completed requests
+        await movie_requests_col.delete_many({
             "status": {"$in": ["completed", "rejected"]},
             "updated_at": {"$lt": week_ago}
         })
-        
-        # Log the cleanup
-        await log_deletion(
-            "system", 
-            "cleanup", 
-            f"Cleared {deleted_count['banned_users']} banned users, {deleted_count['inactive_groups']} inactive groups"
-        )
         
         return deleted_count
         
