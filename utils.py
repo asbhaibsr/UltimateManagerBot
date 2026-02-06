@@ -11,195 +11,57 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 class MovieBotUtils:
     
-    # --- MOVIE/SERIES FORMAT VALIDATION ---
+    # --- MOVIE/SERIES FORMAT VALIDATION (UPDATED) ---
     @staticmethod
     def validate_movie_format(text: str) -> dict:
-        """
-        Returns: {
-            'is_valid': bool,
-            'message': str,
-            'correct_format': str,
-            'search_query': str,
-            'is_series': bool,
-            'clean_name': str,
-            'language': str,
-            'year': str,
-            'season': str,
-            'episode': str
-        }
-        """
         text_lower = text.lower().strip()
         
-        # Common junk words to remove
-        junk_words = [
-            # Request words
+        # 1. Junk words ki list define karo
+        junk_words_list = [
             "dedo", "chahiye", "chaiye", "mangta", "bhej", "send", "kardo", "karo", "do",
-            "plz", "pls", "please", "request", "mujhe", "mereko", "koi",
-            
-            # Quality/Format words
-            "download", "link", "movie", "film", "series", "show", "full", "hd", "480p", 
-            "720p", "1080p", "4k", "bluray", "webdl", "webrip", "dvdrip", "brrip",
-            
-            # Language words
-            "hindi", "english", "tamil", "telugu", "malayalam", "kannada", "bengali", 
-            "punjabi", "marathi", "gujarati", "dual", "dubbed", "original",
-            
-            # Other common words
-            "bhai", "bro", "sir", "admin", "yaar", "hello", "hi", "hey",
-            "ka", "ki", "ke", "mein", "se", "aur", "magar", "par",
-            "episode", "season", "saison", "part", "volume", "chapter"
+            "plz", "pls", "please", "request", "mujhe", "mereko", "koi", "link", 
+            "download", "movie", "film", "series", "full", "hd", "480p", "720p", "1080p", 
+            "hindi", "english", "dubbed", "bhai", "bro", "sir", "admin", "yaar",
+            "upload", "fast", "urgent", "now", "online", "watch"
         ]
         
-        # Abuse words list (updated)
-        abuse_words = [
-            "mc", "bc", "bkl", "mkl", "chutiya", "kutta", "kamina", "fuck", "bitch", 
-            "sex", "porn", "randi", "gand", "lund", "bhosda", "madarchod", "behenchod",
-            "harami", "kamina", "ullu", "gadha", "bewakuf", "idiot", "stupid", "moron",
-            "lauda", "chut", "gaand", "bsdk", "bhadwa", "chodu", "gandu", "lavde"
-        ]
+        # 2. Check karo user ne kon se junk words use kiye
+        found_junk = []
+        words = text_lower.split()
         
-        # Check for abuse words first
-        for word in abuse_words:
-            if word in text_lower.split():
-                return {
-                    'is_valid': False,
-                    'message': f"❌ **Abusive Language Detected!**\nPlease maintain group decorum.",
-                    'correct_format': '',
-                    'search_query': '',
-                    'is_series': False,
-                    'clean_name': '',
-                    'language': '',
-                    'year': '',
-                    'season': '',
-                    'episode': ''
-                }
+        # Language detect (Simple logic)
+        languages = {'hindi', 'english', 'tamil', 'telugu', 'malayalam', 'kannada', 'marathi'}
+        detected_lang = ""
         
-        # Extract language if mentioned
-        languages = {
-            'hindi': 'Hindi', 'english': 'English', 'tamil': 'Tamil', 
-            'telugu': 'Telugu', 'malayalam': 'Malayalam', 'kannada': 'Kannada',
-            'bengali': 'Bengali', 'punjabi': 'Punjabi', 'marathi': 'Marathi',
-            'gujarati': 'Gujarati'
-        }
-        
-        detected_language = ''
-        for lang_key, lang_name in languages.items():
-            if lang_key in text_lower:
-                detected_language = lang_name
-                text_lower = text_lower.replace(lang_key, '')
-        
-        # Clean the text by removing junk words
-        cleaned_text = text_lower
-        for word in junk_words:
-            cleaned_text = re.sub(rf'\b{word}\b', '', cleaned_text)
-        
-        # Remove extra spaces and punctuation
-        cleaned_text = re.sub(r'[^\w\s\-:]', '', cleaned_text)
-        cleaned_text = ' '.join(cleaned_text.split())
-        
-        if not cleaned_text:
-            return {
-                'is_valid': False,
-                'message': "❌ **Invalid Format!**\nPlease provide a valid movie/series name.",
-                'correct_format': '',
-                'search_query': '',
-                'is_series': False,
-                'clean_name': '',
-                'language': '',
-                'year': '',
-                'season': '',
-                'episode': ''
-            }
-        
-        # Extract year if present
-        year_match = re.search(r'(\d{4})', cleaned_text)
-        year = year_match.group(1) if year_match else ''
-        
-        # Check for series format (S01 E01)
-        series_match = re.search(r'(.+?)(?:\s+[Ss](\d{1,2}))?(?:\s+[Ee](\d{1,2}))?$', cleaned_text, re.IGNORECASE)
-        
-        if series_match:
-            base_name = series_match.group(1).strip()
-            season = f"S{series_match.group(2).zfill(2)}" if series_match.group(2) else ''
-            episode = f"E{series_match.group(3).zfill(2)}" if series_match.group(3) else ''
+        # Clean Text Generation
+        clean_words = []
+        for word in words:
+            # Punctuation htao check karne ke liye
+            clean_w = re.sub(r'[^\w]', '', word)
             
-            is_series = bool(season or episode)
-            
-            # Clean base name
-            clean_base = base_name
-            if year:
-                clean_base = clean_base.replace(year, '').strip()
-            
-            # Create correct format
-            if is_series:
-                correct_format = f"**{clean_base.title()}**"
-                if season:
-                    correct_format += f" **{season}**"
-                if episode:
-                    correct_format += f" **{episode}**"
-                if year:
-                    correct_format += f" **({year})**"
-                if detected_language:
-                    correct_format += f" **[{detected_language}]**"
+            if clean_w in junk_words_list:
+                if clean_w not in found_junk:
+                    found_junk.append(clean_w)
+            elif clean_w in languages:
+                detected_lang = clean_w.title()
             else:
-                correct_format = f"**{clean_base.title()}**"
-                if year:
-                    correct_format += f" **({year})**"
-                if detected_language:
-                    correct_format += f" **[{detected_language}]**"
-            
-            # Create search query for button
-            search_query = clean_base.replace(' ', '+')
-            if season:
-                search_query += f"+{season}"
-            if episode:
-                search_query += f"+{episode}"
-            if year:
-                search_query += f"+{year}"
-            if detected_language:
-                search_query += f"+{detected_language}"
-            
-            return {
-                'is_valid': True,
-                'message': f"✅ **Correct Format Detected!**\n\n**Your Search:** `{text}`\n**Suggested Format:** {correct_format}",
-                'correct_format': correct_format,
-                'search_query': search_query,
-                'is_series': is_series,
-                'clean_name': clean_base.title(),
-                'language': detected_language,
-                'year': year,
-                'season': season,
-                'episode': episode
-            }
+                clean_words.append(word)
+                
+        clean_text = " ".join(clean_words).title()
         
-        # For movies
-        clean_name = cleaned_text
-        if year:
-            clean_name = clean_name.replace(year, '').strip()
-        
-        correct_format = f"**{clean_name.title()}**"
-        if year:
-            correct_format += f" **({year})**"
-        if detected_language:
-            correct_format += f" **[{detected_language}]**"
-        
-        search_query = clean_name.replace(' ', '+')
-        if year:
-            search_query += f"+{year}"
-        if detected_language:
-            search_query += f"+{detected_language}"
-        
+        # Format banao
+        if detected_lang:
+            correct_format = f"{clean_text} [{detected_lang}]"
+        else:
+            correct_format = clean_text
+
+        # Return dict me 'found_junk' add kiya hai
         return {
-            'is_valid': True,
-            'message': f"✅ **Correct Format Detected!**\n\n**Your Search:** `{text}`\n**Suggested Format:** {correct_format}",
+            'is_valid': len(found_junk) == 0, # Agar junk mila to invalid
+            'found_junk': found_junk,         # Ye list bot use karega message me
+            'clean_name': clean_text,
             'correct_format': correct_format,
-            'search_query': search_query,
-            'is_series': False,
-            'clean_name': clean_name.title(),
-            'language': detected_language,
-            'year': year,
-            'season': '',
-            'episode': ''
+            'search_query': clean_text.replace(" ", "+")
         }
     
     # --- CREATE FORMATTED MESSAGE ---
