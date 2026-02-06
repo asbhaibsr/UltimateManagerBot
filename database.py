@@ -53,6 +53,13 @@ async def ban_user(user_id):
 async def unban_user(user_id):
     await users_col.update_one({"_id": user_id}, {"$set": {"banned": False}})
 
+# NAYA FUNCTION: Block users ko database se delete karna
+async def delete_user(user_id):
+    """Permanently delete user from database"""
+    await users_col.delete_one({"_id": user_id})
+    # Optional: Log deletion if needed
+    # await log_deletion("user", user_id, "Deleted (Blocked/Invalid)")
+
 # ================ GROUP FUNCTIONS ================
 async def add_group(group_id, title=None, username=None):
     group = await groups_col.find_one({"_id": group_id})
@@ -148,7 +155,7 @@ async def get_settings(chat_id):
         default_settings = {
             "_id": chat_id,
             "spelling_on": True,
-            "spelling_mode": "simple",  # NEW: Options: 'simple' or 'advanced'
+            "spelling_mode": "simple",  # Options: 'simple' or 'advanced'
             "auto_delete_on": False,
             "delete_time": 0,
             "welcome_enabled": True,
@@ -174,6 +181,27 @@ async def update_settings(chat_id, key, value):
         {"$set": {key: value}},
         upsert=True
     )
+
+# ================ WELCOME FUNCTIONS ================
+async def set_welcome_message(chat_id, text, photo_id=None):
+    """Set custom welcome message and photo"""
+    data = {
+        "text": text,
+        "photo_id": photo_id,
+        "enabled": True
+    }
+    await settings_col.update_one(
+        {"_id": chat_id},
+        {"$set": {"welcome_data": data, "welcome_enabled": True}},
+        upsert=True
+    )
+
+async def get_welcome_message(chat_id):
+    """Get custom welcome message"""
+    settings = await settings_col.find_one({"_id": chat_id})
+    if settings and "welcome_data" in settings:
+        return settings["welcome_data"]
+    return None
 
 # ================ FORCE SUB FUNCTIONS ================
 async def set_force_sub(chat_id, channel_id):
