@@ -18,11 +18,11 @@ class MovieBotUtils:
         
         # 1. Junk words ki list define karo
         junk_words_list = [
-            "dedo", "chahiye", "chaiye", "mangta", "bhej", "send", "kardo", "karo", "do",
+            "dedo", "chahiye", "chaiye", "season", "bhejo", "send", "kardo", "karo", "do",
             "plz", "pls", "please", "request", "mujhe", "mereko", "koi", "link", 
             "download", "movie", "film", "series", "full", "hd", "480p", "720p", "1080p", 
-            "hindi", "english", "dubbed", "bhai", "bro", "sir", "admin", "yaar",
-            "upload", "fast", "urgent", "now", "online", "watch"
+            "webseries", "episode", "dubbed", "episod", "movies", "dena", "admin", "yaar",
+            "upload", "uploded", "zaldi", "seassion", "post", "watch"
         ]
         
         # 2. Check karo user ne kon se junk words use kiye
@@ -71,9 +71,9 @@ class MovieBotUtils:
         
         # Create main message
         lines = [
-            "╔══════════════════════════╗",
-            "  ✨ **FORMAT CORRECTION** ✨",
-            "╚══════════════════════════╝",
+            "╔══════════════════╗",
+            "✨ **FORMAT CORRECTION** ✨",
+            "╚══════════════════╝",
             "",
             f"👤 **User:** {user_name}",
             f"❌ **Wrong Format:** `{original_text}`",
