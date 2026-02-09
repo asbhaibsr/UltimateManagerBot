@@ -1,8 +1,8 @@
 # bio_protection.py - COMPLETE FILE
-"""
-Bio Link Protection System
-Modified for Movie Helper Bot
-"""
+#"""
+#Bio Link Protection System
+#Modified for Movie Helper Bot
+#"""
 
 import re
 import datetime
