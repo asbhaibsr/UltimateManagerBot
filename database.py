@@ -1,3 +1,4 @@
+# database.py - COMPLETE FILE
 import motor.motor_asyncio
 import datetime
 from datetime import timedelta
@@ -15,7 +16,7 @@ force_sub_col = db["force_sub"]
 warnings_col = db["warnings"]
 auto_accept_col = db["auto_accept"]
 movie_requests_col = db["movie_requests"]
-deleted_data_col = db["deleted_data"]  # New collection for tracking
+deleted_data_col = db["deleted_data"]
 
 # ================ USER FUNCTIONS ================
 async def add_user(user_id, username=None, first_name=None, last_name=None):
@@ -53,12 +54,9 @@ async def ban_user(user_id):
 async def unban_user(user_id):
     await users_col.update_one({"_id": user_id}, {"$set": {"banned": False}})
 
-# NAYA FUNCTION: Block users ko database se delete karna
 async def delete_user(user_id):
     """Permanently delete user from database"""
     await users_col.delete_one({"_id": user_id})
-    # Optional: Log deletion if needed
-    # await log_deletion("user", user_id, "Deleted (Blocked/Invalid)")
 
 # ================ GROUP FUNCTIONS ================
 async def add_group(group_id, title=None, username=None):
@@ -155,13 +153,15 @@ async def get_settings(chat_id):
         default_settings = {
             "_id": chat_id,
             "spelling_on": True,
-            "spelling_mode": "simple",  # Options: 'simple' or 'advanced'
+            "spelling_mode": "simple",
             "auto_delete_on": False,
             "delete_time": 0,
             "welcome_enabled": True,
             "force_sub_enabled": False,
             "ai_enabled": True,
-            "ai_chat_on": False
+            "ai_chat_on": False,
+            "bio_protection": False,
+            "clean_join": True
         }
         try:
             await settings_col.insert_one(default_settings)
@@ -169,9 +169,12 @@ async def get_settings(chat_id):
             pass
         return default_settings
     
-    # Ensure new keys exist if updating old DB
     if "spelling_mode" not in settings:
         settings["spelling_mode"] = "simple"
+    if "bio_protection" not in settings:
+        settings["bio_protection"] = False
+    if "clean_join" not in settings:
+        settings["clean_join"] = True
         
     return settings
 
@@ -217,7 +220,7 @@ async def get_force_sub(chat_id):
 async def remove_force_sub(chat_id):
     await force_sub_col.delete_one({"_id": chat_id})
 
-# ================ CLEAR JUNK FUNCTION (FIXED & IMPROVED) ================
+# ================ CLEAR JUNK FUNCTION ================
 async def clear_junk():
     """Clear all junk data: banned users, removed bots, inactive groups"""
     deleted_count = {
@@ -227,20 +230,15 @@ async def clear_junk():
     }
     
     try:
-        # 1. Delete banned users from DB
         result = await users_col.delete_many({"banned": True})
         deleted_count["banned_users"] = result.deleted_count
         
-        # 2. Check Groups (Complex Logic simplified)
-        # Groups marked as deleted or where bot was removed
         result = await groups_col.delete_many({"bot_removed": True})
         deleted_count["inactive_groups"] = result.deleted_count
         
-        # 3. Clean old warnings (older than 7 days is enough)
         week_ago = datetime.datetime.now() - timedelta(days=7)
         await warnings_col.delete_many({"last_warning": {"$lt": week_ago}})
         
-        # 4. Clean completed requests
         await movie_requests_col.delete_many({
             "status": {"$in": ["completed", "rejected"]},
             "updated_at": {"$lt": week_ago}
@@ -327,7 +325,6 @@ async def get_bot_stats():
         "total_requests": await movie_requests_col.count_documents({})
     }
     
-    # Count premium groups
     async for group in groups_col.find({}):
         if group.get("is_premium", False):
             stats["premium_groups"] += 1
