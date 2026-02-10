@@ -1,38 +1,45 @@
-# utils.py - COMPLETE FILE
 import re
 import aiohttp
 import asyncio
 import g4f
 import difflib
-import os
 from config import Config
 from typing import Optional
 from urllib.parse import quote
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 class MovieBotUtils:
     
-    # --- MOVIE/SERIES FORMAT VALIDATION ---
+    # --- MOVIE/SERIES FORMAT VALIDATION (UPDATED WITH JUNK WORDS) ---
     @staticmethod
     def validate_movie_format(text: str) -> dict:
         text_lower = text.lower().strip()
         
+        # Extended junk words list (Aapka list)
         junk_words_list = [
             "dedo", "chahiye", "chaiye", "season", "bhejo", "send", "kardo", "karo", "do",
             "plz", "pls", "please", "request", "mujhe", "mereko", "koi", "link", 
             "download", "movie", "film", "series", "full", "hd", "480p", "720p", "1080p", 
             "webseries", "episode", "dubbed", "episod", "movies", "dena", "admin", "yaar",
-            "upload", "uploded", "zaldi", "seassion", "post", "watch"
+            "upload", "uploded", "zaldi", "seassion", "post", "watch", "mangta", "mangta",
+            "bhai", "bro", "sir", "ji", "ka", "ki", "ke", "ko", "se", "mein", "hai",
+            "hello", "hi", "hey", "lunch", "dinner", "breakfast", "good", "morning",
+            "night", "evening", "thanks", "thank", "bye", "ok", "okay", "yes", "no",
+            "maybe", "help", "need", "want", "looking", "find", "search", "where",
+            "how", "when", "why", "what", "which", "who", "whose", "whom"
         ]
         
+        # Check karo user ne kon se junk words use kiye
         found_junk = []
         words = text_lower.split()
         
+        # Language detect
         languages = {'hindi', 'english', 'tamil', 'telugu', 'malayalam', 'kannada', 'marathi'}
         detected_lang = ""
         
+        # Clean Text Generation
         clean_words = []
         for word in words:
+            # Punctuation htao
             clean_w = re.sub(r'[^\w]', '', word)
             
             if clean_w in junk_words_list:
@@ -45,6 +52,7 @@ class MovieBotUtils:
                 
         clean_text = " ".join(clean_words).title()
         
+        # Format banao
         if detected_lang:
             correct_format = f"{clean_text} [{detected_lang}]"
         else:
@@ -61,18 +69,20 @@ class MovieBotUtils:
     # --- CREATE FORMATTED MESSAGE ---
     @staticmethod
     def create_format_message(user_name: str, original_text: str, validation_result: dict, group_username: str = "") -> tuple:
+        """Returns (message_text, keyboard_markup)"""
+        
         lines = [
-            "╔══════════════════╗",
+            "╔══════════════════════════╗",
             "✨ **FORMAT CORRECTION** ✨",
-            "╚══════════════════╝",
+            "╚══════════════════════════╝",
             "",
             f"👤 **User:** {user_name}",
             f"❌ **Wrong Format:** {original_text}",
             f"✅ **Correct Format:** {validation_result['correct_format']}",
             "",
             "📌 **Format Rules:**",
-            "Movie Name (Year) [Language]",
-            "Series Name S01 E01 (Year) [Language]",
+            "• Movie Name (Year) [Language]",
+            "• Series Name S01 E01 (Year) [Language]",
             "",
             "🔍 **Examples:**",
             "• kalki 2024 hindi → **Kalki (2024) [Hindi]**",
@@ -82,6 +92,7 @@ class MovieBotUtils:
         
         message_text = "\n".join(lines)
         
+        # Create search button
         if group_username:
             group_name = group_username.replace('@', '')
             search_query = validation_result['search_query']
@@ -103,10 +114,6 @@ class MovieBotUtils:
     async def get_ai_response(query: str, context: str = "") -> str:
         """Get AI response with better handling"""
         try:
-            import random
-            if random.random() < 0.1:
-                return "🤖 **AI Server Busy**\n\nPlease try again in a few moments! ⏳"
-            
             movie_keywords = ["movie", "film", "series", "web series", "show", "episode", 
                             "imdb", "rating", "cast", "director", "review", "download",
                             "watch", "stream", "ott", "netflix", "amazon", "hotstar"]
@@ -122,6 +129,7 @@ class MovieBotUtils:
                 Reply as a helpful assistant in Hinglish with emojis.
                 Keep it friendly and under 100 words."""
             
+            # Add context if available
             if context:
                 prompt = f"Context: {context}\n\n{prompt}"
             
@@ -131,13 +139,12 @@ class MovieBotUtils:
                 timeout=30
             )
             
-            if not response or len(response.strip()) < 10:
-                if is_movie_query:
-                    return "🎬 **Movie Information**\n\nSorry, couldn't fetch details right now. Please try the official platforms or ask an admin for help! 😊"
-                else:
-                    return "🤖 **AI Response**\n\nHmm, let me think... Actually, why don't you ask me about movies? I'm great at recommending them! 🎬"
+            # Format response nicely
+            if is_movie_query:
+                formatted_response = f"🎬 **Movie Information**\n\n{response.strip()}\n\n✨ *Powered by Movie Helper Bot*"
+            else:
+                formatted_response = f"🤖 **AI Response**\n\n{response.strip()}\n\n✨ *Powered by Movie Helper Bot*"
             
-            formatted_response = f"🤖 **AI Response**\n\n{response.strip()}\n\n✨ *Powered by Movie Helper Bot*"
             return formatted_response
             
         except Exception as e:
@@ -160,6 +167,8 @@ class MovieBotUtils:
                 rating = data.get("imdbRating", "N/A")
                 genre = data.get("Genre", "N/A")
                 plot = data.get("Plot", "N/A")
+                if len(plot) > 200:
+                    plot = plot[:200] + "..."
                 
                 response_lines = [
                     "🎬 **Movie Information** 🎬",
@@ -168,7 +177,7 @@ class MovieBotUtils:
                     f"📅 **Year:** {year}",
                     f"⭐ **Rating:** {rating}/10",
                     f"🎭 **Genre:** {genre}",
-                    f"📖 **Plot:** {plot}...",
+                    f"📖 **Plot:** {plot}",
                     "",
                     f"🔗 **IMDb:** https://www.imdb.com/title/{data.get('imdbID', '')}/",
                     "",
@@ -180,66 +189,7 @@ class MovieBotUtils:
         except:
             return "❌ **IMDb Service Unavailable**\n\nPlease check the movie name and try again later."
     
-    # --- DAILY FEATURED MOVIE ---
-    @staticmethod
-    async def get_daily_featured_movie():
-        """Get a random featured movie from OMDb API"""
-        try:
-            popular_movies = [
-                "Kalki 2898 AD", "Pushpa 2", "Jawan", "Animal", 
-                "Gadar 2", "OMG 2", "Mission Impossible", "Oppenheimer",
-                "Barbie", "Spider-Man", "The Kerala Story", "RRR"
-            ]
-            
-            import random
-            movie_name = random.choice(popular_movies)
-            
-            url = f"http://www.omdbapi.com/?t={quote(movie_name)}&apikey={Config.OMDB_API_KEY}"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=10) as resp:
-                    data = await resp.json()
-            
-            if data.get("Response") == "True":
-                return {
-                    "title": data.get("Title", movie_name),
-                    "year": data.get("Year", ""),
-                    "rating": data.get("imdbRating", "N/A"),
-                    "genre": data.get("Genre", "N/A"),
-                    "plot": data.get("Plot", ""),
-                    "poster": data.get("Poster", ""),
-                    "runtime": data.get("Runtime", "N/A"),
-                    "director": data.get("Director", "N/A"),
-                    "actors": data.get("Actors", "N/A"),
-                    "imdb_id": data.get("imdbID", "")
-                }
-            else:
-                return {
-                    "title": movie_name,
-                    "year": "2024",
-                    "rating": "8.0/10",
-                    "genre": "Action/Drama",
-                    "plot": f"{movie_name} is currently trending worldwide with excellent reviews.",
-                    "poster": "",
-                    "runtime": "120 min",
-                    "director": "Popular Director",
-                    "actors": "Popular Cast",
-                    "imdb_id": ""
-                }
-        except:
-            return {
-                "title": "Kalki 2898 AD",
-                "year": "2024",
-                "rating": "8.5/10",
-                "genre": "Sci-Fi/Action",
-                "plot": "An epic sci-fi mythological film starring Prabhas.",
-                "poster": "",
-                "runtime": "150 min",
-                "director": "Nag Ashwin",
-                "actors": "Prabhas, Deepika Padukone, Amitabh Bachchan",
-                "imdb_id": ""
-            }
-    
-    # --- MESSAGE QUALITY CHECK ---
+    # --- MESSAGE QUALITY CHECK (UPDATED) ---
     @staticmethod
     def check_message_quality(text: str) -> str:
         """
@@ -247,6 +197,7 @@ class MovieBotUtils:
         """
         text_lower = text.lower().strip()
         
+        # A. 🔗 LINK DETECTION
         link_patterns = [
             r't\.me/', r'telegram\.me/', r'http://', r'https://', 
             r'www\.', r'\.com', r'\.in', r'\.net', r'\.org', r'\.io',
@@ -256,6 +207,7 @@ class MovieBotUtils:
             if re.search(pattern, text_lower):
                 return "LINK"
         
+        # B. 🤬 ABUSE WORDS
         abuse_words = [
             "mc", "bc", "bkl", "mkl", "chutiya", "kutta", "kamina", "fuck", 
             "bitch", "sex", "porn", "randi", "gand", "lund", "bhosda", 
@@ -270,6 +222,7 @@ class MovieBotUtils:
             if word in words:
                 return "ABUSE"
         
+        # C. 🚫 JUNK WORDS (Extended)
         junk_words = [
             "dedo", "chahiye", "chaiye", "mangta", "bhej", "send", "kardo", 
             "karo", "do", "plz", "pls", "please", "request", "link", "download", 
@@ -277,7 +230,8 @@ class MovieBotUtils:
             "480p", "720p", "1080p", "bhai", "bro", "sir", "admin", "yaar", 
             "hello", "hi", "hey", "lunch", "dinner", "mujhe", "mereko", "koi",
             "full", "complete", "part", "version", "print", "quality", "bluray",
-            "webdl", "torrent", "magnet", "subtitle", "dual", "audio", "dubbed"
+            "webdl", "torrent", "magnet", "subtitle", "dual", "audio", "dubbed",
+            "mangta", "mangta", "ji", "ka", "ki", "ke", "ko", "se", "mein", "hai"
         ]
         
         for word in junk_words:
@@ -287,6 +241,7 @@ class MovieBotUtils:
                     if clean_w == word:
                         return "JUNK"
         
+        # D. ✅ CLEAN FORMAT
         clean_pattern = r'^[a-zA-Z0-9\s\-\:\'\&]+(?:\s\d{4})?(?:\s?[Ss]\d{1,2})?(?:\s?[Ee]\d{1,2})?$'
         if re.match(clean_pattern, text, re.IGNORECASE):
             return "CLEAN"
@@ -308,6 +263,7 @@ class MovieBotUtils:
         """Extract clean movie/series name"""
         text = text.lower()
         
+        # Remove common words
         remove_words = [
             "download", "movie", "film", "series", "link", "dedo", "chahiye", 
             "plz", "pls", "bhai", "season", "episode", "full", "hd", "hindi", 
@@ -318,67 +274,13 @@ class MovieBotUtils:
         for word in remove_words:
             text = text.replace(word, "")
         
+        # Clean up
         text = re.sub(r'[^\w\s]', '', text)
         text = ' '.join(text.split())
         
         if len(text) > 1:
             return text.title()
         return ""
-    
-    # --- WELCOME WITH PHOTO ---
-    @staticmethod
-    async def send_welcome_with_photo(client, chat_id, user, welcome_text, buttons=None):
-        """Send welcome message with user photo"""
-        try:
-            if hasattr(user, 'photo') and user.photo:
-                try:
-                    photo = await client.download_media(user.photo.big_file_id)
-                    
-                    msg = await client.send_photo(
-                        chat_id,
-                        photo=photo,
-                        caption=welcome_text,
-                        reply_markup=buttons
-                    )
-                    
-                    if os.path.exists(photo):
-                        os.remove(photo)
-                        
-                    return msg
-                    
-                except Exception as e:
-                    print(f"Photo welcome error: {e}")
-            
-            msg = await client.send_message(
-                chat_id,
-                welcome_text,
-                reply_markup=buttons,
-                disable_web_page_preview=True
-            )
-            return msg
-            
-        except Exception as e:
-            print(f"Welcome error: {e}")
-            return None
-    
-    # --- SEARCH ENGINES ---
-    @staticmethod
-    async def search_google(query: str):
-        """Search Google for movie info"""
-        try:
-            search_url = f"https://www.google.com/search?q={quote(query)}+movie"
-            return search_url
-        except:
-            return None
-
-    @staticmethod
-    async def search_anime(query: str):
-        """Search anime info"""
-        try:
-            search_url = f"https://myanimelist.net/search/all?q={quote(query)}"
-            return search_url
-        except:
-            return None
     
     # --- SYSTEM UTILS ---
     @staticmethod
@@ -426,4 +328,4 @@ class MovieBotUtils:
             "Sooryavanshi 2021",
             "Tenet 2020",
             "Avengers Endgame 2019"
-            ]
+        ]
