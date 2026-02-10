@@ -6,40 +6,32 @@ import difflib
 from config import Config
 from typing import Optional
 from urllib.parse import quote
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 class MovieBotUtils:
     
-    # --- MOVIE/SERIES FORMAT VALIDATION (UPDATED WITH JUNK WORDS) ---
+    # --- MOVIE/SERIES FORMAT VALIDATION ---
     @staticmethod
     def validate_movie_format(text: str) -> dict:
         text_lower = text.lower().strip()
         
-        # Extended junk words list (Aapka list)
         junk_words_list = [
             "dedo", "chahiye", "chaiye", "season", "bhejo", "send", "kardo", "karo", "do",
             "plz", "pls", "please", "request", "mujhe", "mereko", "koi", "link", 
             "download", "movie", "film", "series", "full", "hd", "480p", "720p", "1080p", 
             "webseries", "episode", "dubbed", "episod", "movies", "dena", "admin", "yaar",
-            "upload", "uploded", "zaldi", "seassion", "post", "watch", "mangta", "mangta",
-            "bhai", "bro", "sir", "ji", "ka", "ki", "ke", "ko", "se", "mein", "hai",
-            "hello", "hi", "hey", "lunch", "dinner", "breakfast", "good", "morning",
-            "night", "evening", "thanks", "thank", "bye", "ok", "okay", "yes", "no",
-            "maybe", "help", "need", "want", "looking", "find", "search", "where",
-            "how", "when", "why", "what", "which", "who", "whose", "whom"
+            "upload", "uploded", "zaldi", "seassion", "post", "watch", "manga", "de", "na",
+            "bhai", "bro", "sir", "hello", "hi", "hey", "ka", "ki", "ke", "ko", "se", "me"
         ]
         
-        # Check karo user ne kon se junk words use kiye
         found_junk = []
         words = text_lower.split()
         
-        # Language detect
         languages = {'hindi', 'english', 'tamil', 'telugu', 'malayalam', 'kannada', 'marathi'}
         detected_lang = ""
         
-        # Clean Text Generation
         clean_words = []
         for word in words:
-            # Punctuation htao
             clean_w = re.sub(r'[^\w]', '', word)
             
             if clean_w in junk_words_list:
@@ -52,7 +44,6 @@ class MovieBotUtils:
                 
         clean_text = " ".join(clean_words).title()
         
-        # Format banao
         if detected_lang:
             correct_format = f"{clean_text} [{detected_lang}]"
         else:
@@ -65,35 +56,37 @@ class MovieBotUtils:
             'correct_format': correct_format,
             'search_query': clean_text.replace(" ", "+")
         }
-    
-    # --- CREATE FORMATTED MESSAGE ---
+
+    # --- CREATE FORMATTED MESSAGE (ADDED BACK) ---
     @staticmethod
     def create_format_message(user_name: str, original_text: str, validation_result: dict, group_username: str = "") -> tuple:
         """Returns (message_text, keyboard_markup)"""
         
+        # Create main message
         lines = [
-            "╔══════════════════════════╗",
+            "╔══════════════════╗",
             "✨ **FORMAT CORRECTION** ✨",
-            "╚══════════════════════════╝",
+            "╚══════════════════╝",
             "",
             f"👤 **User:** {user_name}",
-            f"❌ **Wrong Format:** {original_text}",
+            f"❌ **Wrong Format:** `{original_text}`",
             f"✅ **Correct Format:** {validation_result['correct_format']}",
             "",
             "📌 **Format Rules:**",
-            "• Movie Name (Year) [Language]",
-            "• Series Name S01 E01 (Year) [Language]",
+            "• Movie: **Movie Name (Year) [Language]**",
+            "• Series: **Series Name S01 E01 (Year) [Language]**",
             "",
             "🔍 **Examples:**",
-            "• kalki 2024 hindi → **Kalki (2024) [Hindi]**",
-            "• stranger things s01 e01 → **Stranger Things S01 E01**",
+            "• `kalki 2024 hindi` → **Kalki (2024) [Hindi]**",
+            "• `stranger things s01 e01` → **Stranger Things S01 E01**",
             ""
         ]
         
         message_text = "\n".join(lines)
         
-        # Create search button
+        # Create search button with proper link
         if group_username:
+            # Remove @ if present
             group_name = group_username.replace('@', '')
             search_query = validation_result['search_query']
             search_url = f"https://t.me/{group_name}?start={search_query}"
@@ -114,6 +107,10 @@ class MovieBotUtils:
     async def get_ai_response(query: str, context: str = "") -> str:
         """Get AI response with better handling"""
         try:
+            import random
+            if random.random() < 0.1:
+                return "🤖 **AI Server Busy**\n\nPlease try again in a few moments! ⏳"
+            
             movie_keywords = ["movie", "film", "series", "web series", "show", "episode", 
                             "imdb", "rating", "cast", "director", "review", "download",
                             "watch", "stream", "ott", "netflix", "amazon", "hotstar"]
@@ -129,7 +126,6 @@ class MovieBotUtils:
                 Reply as a helpful assistant in Hinglish with emojis.
                 Keep it friendly and under 100 words."""
             
-            # Add context if available
             if context:
                 prompt = f"Context: {context}\n\n{prompt}"
             
@@ -139,12 +135,13 @@ class MovieBotUtils:
                 timeout=30
             )
             
-            # Format response nicely
-            if is_movie_query:
-                formatted_response = f"🎬 **Movie Information**\n\n{response.strip()}\n\n✨ *Powered by Movie Helper Bot*"
-            else:
-                formatted_response = f"🤖 **AI Response**\n\n{response.strip()}\n\n✨ *Powered by Movie Helper Bot*"
+            if not response or len(response) < 10:
+                if is_movie_query:
+                    return "🎬 **Movie Information**\n\nSorry, couldn't fetch details right now. Please try the official IMDB website for accurate information! 📡"
+                else:
+                    return "🤖 **AI Response**\n\nHmm, let me think... Actually, why don't you ask me about movies? I'm great at recommending films! 🎬"
             
+            formatted_response = f"🤖 **AI Response**\n\n{response.strip()}\n\n✨ *Powered by Movie Helper Bot*"
             return formatted_response
             
         except Exception as e:
@@ -166,18 +163,16 @@ class MovieBotUtils:
                 year = data.get("Year", "N/A")
                 rating = data.get("imdbRating", "N/A")
                 genre = data.get("Genre", "N/A")
-                plot = data.get("Plot", "N/A")
-                if len(plot) > 200:
-                    plot = plot[:200] + "..."
+                plot = data.get("Plot", "N/A")[:200]
                 
                 response_lines = [
                     "🎬 **Movie Information** 🎬",
                     "",
-                    f"🎭 **Title:** {title}",
+                    f"🎞️ **Title:** {title}",
                     f"📅 **Year:** {year}",
                     f"⭐ **Rating:** {rating}/10",
                     f"🎭 **Genre:** {genre}",
-                    f"📖 **Plot:** {plot}",
+                    f"📖 **Plot:** {plot}...",
                     "",
                     f"🔗 **IMDb:** https://www.imdb.com/title/{data.get('imdbID', '')}/",
                     "",
@@ -185,19 +180,16 @@ class MovieBotUtils:
                 ]
                 
                 return "\n".join(response_lines)
-            return "❌ **Movie Not Found**\n\nCouldn't find information for this movie on IMDb."
+            return "❌ **Movie Not Found**\n\nCould not find information for this movie on IMDb."
         except:
             return "❌ **IMDb Service Unavailable**\n\nPlease check the movie name and try again later."
     
-    # --- MESSAGE QUALITY CHECK (UPDATED) ---
+    # --- MESSAGE QUALITY CHECK ---
     @staticmethod
     def check_message_quality(text: str) -> str:
-        """
-        Returns: 'CLEAN', 'JUNK', 'LINK', 'ABUSE', or 'IGNORE'
-        """
         text_lower = text.lower().strip()
         
-        # A. 🔗 LINK DETECTION
+        # LINK DETECTION
         link_patterns = [
             r't\.me/', r'telegram\.me/', r'http://', r'https://', 
             r'www\.', r'\.com', r'\.in', r'\.net', r'\.org', r'\.io',
@@ -207,7 +199,7 @@ class MovieBotUtils:
             if re.search(pattern, text_lower):
                 return "LINK"
         
-        # B. 🤬 ABUSE WORDS
+        # ABUSE WORDS
         abuse_words = [
             "mc", "bc", "bkl", "mkl", "chutiya", "kutta", "kamina", "fuck", 
             "bitch", "sex", "porn", "randi", "gand", "lund", "bhosda", 
@@ -222,7 +214,7 @@ class MovieBotUtils:
             if word in words:
                 return "ABUSE"
         
-        # C. 🚫 JUNK WORDS (Extended)
+        # JUNK WORDS
         junk_words = [
             "dedo", "chahiye", "chaiye", "mangta", "bhej", "send", "kardo", 
             "karo", "do", "plz", "pls", "please", "request", "link", "download", 
@@ -230,8 +222,7 @@ class MovieBotUtils:
             "480p", "720p", "1080p", "bhai", "bro", "sir", "admin", "yaar", 
             "hello", "hi", "hey", "lunch", "dinner", "mujhe", "mereko", "koi",
             "full", "complete", "part", "version", "print", "quality", "bluray",
-            "webdl", "torrent", "magnet", "subtitle", "dual", "audio", "dubbed",
-            "mangta", "mangta", "ji", "ka", "ki", "ke", "ko", "se", "mein", "hai"
+            "webdl", "torrent", "magnet", "subtitle", "dual", "audio", "dubbed"
         ]
         
         for word in junk_words:
@@ -241,7 +232,7 @@ class MovieBotUtils:
                     if clean_w == word:
                         return "JUNK"
         
-        # D. ✅ CLEAN FORMAT
+        # CLEAN FORMAT
         clean_pattern = r'^[a-zA-Z0-9\s\-\:\'\&]+(?:\s\d{4})?(?:\s?[Ss]\d{1,2})?(?:\s?[Ee]\d{1,2})?$'
         if re.match(clean_pattern, text, re.IGNORECASE):
             return "CLEAN"
@@ -251,7 +242,6 @@ class MovieBotUtils:
     # --- SPELLING SUGGESTION ---
     @staticmethod
     def get_spelling_suggestion(user_text: str, movie_list: list) -> Optional[str]:
-        """Suggest correct spelling"""
         matches = difflib.get_close_matches(user_text, movie_list, n=1, cutoff=0.5)
         if matches:
             return matches[0]
@@ -260,10 +250,8 @@ class MovieBotUtils:
     # --- EXTRACT CLEAN NAME ---
     @staticmethod
     def extract_movie_name(text: str) -> str:
-        """Extract clean movie/series name"""
         text = text.lower()
         
-        # Remove common words
         remove_words = [
             "download", "movie", "film", "series", "link", "dedo", "chahiye", 
             "plz", "pls", "bhai", "season", "episode", "full", "hd", "hindi", 
@@ -274,7 +262,6 @@ class MovieBotUtils:
         for word in remove_words:
             text = text.replace(word, "")
         
-        # Clean up
         text = re.sub(r'[^\w\s]', '', text)
         text = ' '.join(text.split())
         
