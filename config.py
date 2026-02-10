@@ -28,9 +28,13 @@ class Config:
     BROADCAST_DELAY = 0.5  # Seconds between broadcasts
     SPELLING_CHECK_TIMEOUT = 10  # Timeout for spelling checks
     
-    # --- ADDED THESE LINES TO FIX CRASH ---
+    # Security Settings
     MAX_WARNINGS = 3  # For abuse/link warnings
-    CLEANUP_INTERVAL = 3600 # 1 Hour for background tasks
+    CLEANUP_INTERVAL = 3600  # 1 Hour for background tasks
+    
+    # New Settings
+    BIO_WARN_LIMIT = 3  # Bio link warnings before penalty
+    COPYRIGHT_WARN_LIMIT = 2  # Copyright warnings before ban
     
     # Force Sub Channel
     FORCE_SUB_CHANNEL = os.getenv("FORCE_SUB_CHANNEL", "@asbhai_bsr")
@@ -40,3 +44,10 @@ class Config:
     
     # Welcome Settings
     WELCOME_WITH_PHOTO = True  # Default welcome with photo
+    
+    # New Feature Flags
+    ENABLE_BIO_PROTECTION = True
+    ENABLE_COPYRIGHT_PROTECTION = True
+    ENABLE_CLEAN_JOIN = True
+    ENABLE_FUN_COMMANDS = True
+    ENABLE_SEARCH_COMMANDS = True
