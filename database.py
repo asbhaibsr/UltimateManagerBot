@@ -15,99 +15,7 @@ force_sub_col = db["force_sub"]
 warnings_col = db["warnings"]
 auto_accept_col = db["auto_accept"]
 movie_requests_col = db["movie_requests"]
-deleted_data_col = db["deleted_data"]
-bio_protection_col = db["bio_protection"]  # New for Bio Protection
-cleanjoin_col = db["cleanjoin"]  # New for CleanJoin
-
-# ================ CLEANJOIN FUNCTIONS ================
-async def set_cleanjoin(chat_id, status: bool):
-    """Enable/disable clean join service messages"""
-    await cleanjoin_col.update_one(
-        {"_id": chat_id},
-        {"$set": {"enabled": status}},
-        upsert=True
-    )
-
-async def get_cleanjoin(chat_id):
-    """Get clean join status"""
-    data = await cleanjoin_col.find_one({"_id": chat_id})
-    return data.get("enabled", False) if data else False
-
-# ================ BIO PROTECTION FUNCTIONS ================
-async def set_bio_protection(chat_id, status: bool, warn_limit=3, penalty="mute"):
-    """Set bio protection settings"""
-    await bio_protection_col.update_one(
-        {"_id": chat_id},
-        {
-            "$set": {
-                "enabled": status,
-                "warn_limit": warn_limit,
-                "penalty": penalty,
-                "updated_at": datetime.datetime.now()
-            }
-        },
-        upsert=True
-    )
-
-async def get_bio_protection(chat_id):
-    """Get bio protection settings"""
-    data = await bio_protection_col.find_one({"_id": chat_id})
-    if data:
-        return {
-            "enabled": data.get("enabled", False),
-            "warn_limit": data.get("warn_limit", 3),
-            "penalty": data.get("penalty", "mute")
-        }
-    return {"enabled": False, "warn_limit": 3, "penalty": "mute"}
-
-async def add_bio_warning(chat_id, user_id):
-    """Add warning for bio violation"""
-    key = f"{chat_id}_{user_id}"
-    data = await bio_protection_col.find_one({"_id": key})
-    count = (data["count"] + 1) if data else 1
-    await bio_protection_col.update_one(
-        {"_id": key},
-        {"$set": {"count": count, "last_warning": datetime.datetime.now()}},
-        upsert=True
-    )
-    return count
-
-async def reset_bio_warnings(chat_id, user_id):
-    """Reset bio warnings"""
-    key = f"{chat_id}_{user_id}"
-    await bio_protection_col.delete_one({"_id": key})
-
-async def get_bio_warnings(chat_id, user_id):
-    """Get bio warning count"""
-    key = f"{chat_id}_{user_id}"
-    data = await bio_protection_col.find_one({"_id": key})
-    return data.get("count", 0) if data else 0
-
-# ================ WHITELIST FUNCTIONS (Bio Protection) ================
-async def add_whitelist(chat_id, user_id):
-    """Add user to whitelist"""
-    await bio_protection_col.update_one(
-        {"_id": f"whitelist_{chat_id}"},
-        {"$addToSet": {"users": user_id}},
-        upsert=True
-    )
-
-async def remove_whitelist(chat_id, user_id):
-    """Remove user from whitelist"""
-    await bio_protection_col.update_one(
-        {"_id": f"whitelist_{chat_id}"},
-        {"$pull": {"users": user_id}}
-    )
-
-async def get_whitelist(chat_id):
-    """Get whitelisted users"""
-    data = await bio_protection_col.find_one({"_id": f"whitelist_{chat_id}"})
-    return data.get("users", []) if data else []
-
-async def is_whitelisted(chat_id, user_id):
-    """Check if user is whitelisted"""
-    whitelist = await get_whitelist(chat_id)
-    return user_id in whitelist
+deleted_data_col = db["deleted_data"]  # New collection for tracking
 
 # ================ USER FUNCTIONS ================
 async def add_user(user_id, username=None, first_name=None, last_name=None):
@@ -237,7 +145,7 @@ async def check_is_premium(group_id):
             return False
     return False
 
-# ================ SETTINGS FUNCTIONS ================
+# ================ SETTINGS FUNCTIONS (UPDATED) ================
 async def get_settings(chat_id):
     settings = await settings_col.find_one({"_id": chat_id})
     if not settings:
@@ -245,14 +153,12 @@ async def get_settings(chat_id):
             "_id": chat_id,
             "spelling_on": True,
             "spelling_mode": "simple",
-            "auto_delete_on": False,
+            "copyright_mode": False,   # Renamed from auto_delete for Copyright feature
             "delete_time": 0,
             "welcome_enabled": True,
-            "force_sub_enabled": False,
-            "ai_enabled": True,
-            "ai_chat_on": False,
-            "bio_protection": False,  # New
-            "copyright_protection": False  # New
+            "clean_join": False,       # New: For deleting 'User Joined' messages
+            "bio_check": True,         # New: For Bio Protection
+            "ai_chat_on": False        # New: AI Chat Toggle
         }
         try:
             await settings_col.insert_one(default_settings)
@@ -260,13 +166,14 @@ async def get_settings(chat_id):
             pass
         return default_settings
     
-    # Ensure new keys exist
-    if "spelling_mode" not in settings:
-        settings["spelling_mode"] = "simple"
-    if "bio_protection" not in settings:
-        settings["bio_protection"] = False
-    if "copyright_protection" not in settings:
-        settings["copyright_protection"] = False
+    # Ensure new keys exist if updating old DB
+    updates = {}
+    if "bio_check" not in settings: updates["bio_check"] = True
+    if "clean_join" not in settings: updates["clean_join"] = False
+    if "copyright_mode" not in settings: updates["copyright_mode"] = settings.get("auto_delete_on", False)
+    
+    if updates:
+        await settings_col.update_one({"_id": chat_id}, {"$set": updates})
         
     return settings
 
@@ -314,7 +221,7 @@ async def remove_force_sub(chat_id):
 
 # ================ CLEAR JUNK FUNCTION ================
 async def clear_junk():
-    """Clear all junk data"""
+    """Clear all junk data: banned users, removed bots, inactive groups"""
     deleted_count = {
         "banned_users": 0,
         "removed_bots": 0,
@@ -322,22 +229,20 @@ async def clear_junk():
     }
     
     try:
-        # 1. Delete banned users
+        # 1. Delete banned users from DB
         result = await users_col.delete_many({"banned": True})
         deleted_count["banned_users"] = result.deleted_count
         
-        # 2. Check Groups
+        # 2. Check Groups (Complex Logic simplified)
+        # Groups marked as deleted or where bot was removed
         result = await groups_col.delete_many({"bot_removed": True})
         deleted_count["inactive_groups"] = result.deleted_count
         
-        # 3. Clean old warnings
+        # 3. Clean old warnings (older than 7 days is enough)
         week_ago = datetime.datetime.now() - timedelta(days=7)
         await warnings_col.delete_many({"last_warning": {"$lt": week_ago}})
         
-        # 4. Clean bio warnings
-        await bio_protection_col.delete_many({"last_warning": {"$lt": week_ago}})
-        
-        # 5. Clean completed requests
+        # 4. Clean completed requests
         await movie_requests_col.delete_many({
             "status": {"$in": ["completed", "rejected"]},
             "updated_at": {"$lt": week_ago}
