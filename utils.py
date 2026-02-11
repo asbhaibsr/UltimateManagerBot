@@ -1,497 +1,355 @@
+import re
+import aiohttp
 import asyncio
-import datetime
+import g4f
+import difflib
 import random
-from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram.enums import ChatMemberStatus
 from config import Config
-from database import *
-from utils import MovieBotUtils
+from typing import Optional
+from urllib.parse import quote
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# ================ GROUP MANAGEMENT COMMANDS ================
-async def is_group_admin(client, chat_id, user_id):
-    """Check if user is admin in group"""
-    try:
-        member = await client.get_chat_member(chat_id, user_id)
-        return member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]
-    except:
-        return False
+class MovieBotUtils:
+    
+    # --- 1. BIO PROTECTION REGEX ---
+    @staticmethod
+    def check_bio_safety(bio: str) -> bool:
+        """Returns False if bio contains links or usernames"""
+        if not bio: return True
+        bio_lower = bio.lower()
+        
+        # Regex for Links and Usernames
+        # Matches: t.me, http, www, .com, @username
+        unsafe_pattern = r'(https?://|www\.|t\.me/|telegram\.me/|\.com|\.net|\.org|@[\w_]+)'
+        
+        if re.search(unsafe_pattern, bio_lower):
+            return False # Unsafe
+        return True # Safe
 
-# --- CLEAN GROUP COMMAND ---
-@app.on_message(filters.command(["clean", "cleangroup"]) & filters.group)
-async def clean_group_command(client: Client, message: Message):
-    """Clean group from inactive members"""
-    if not await is_group_admin(client, message.chat.id, message.from_user.id):
-        msg = await message.reply_text("❌ **Only admins can use this command!**")
-        await asyncio.sleep(5)
-        await msg.delete()
-        return
-    
-    processing_msg = await message.reply_text("🔄 **Scanning group members...**")
-    
-    try:
-        deleted_count = 0
-        total_count = 0
+    # --- 2. GOOGLE & ANIME SEARCH (Simple Parsers) ---
+    @staticmethod
+    async def get_google_search(query: str):
+        """Fetch Top 5 Google Results (DuckDuckGo Fallback for ease)"""
+        url = f"https://html.duckduckgo.com/html/?q={quote(query)}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as resp:
+                text = await resp.text()
         
-        async for member in client.get_chat_members(message.chat.id):
-            total_count += 1
-            if member.user.is_deleted:
-                try:
-                    await client.ban_chat_member(message.chat.id, member.user.id)
-                    deleted_count += 1
-                    await asyncio.sleep(0.5)
-                except:
-                    pass
-        
-        await processing_msg.edit_text(
-            f"✅ **Group Cleanup Complete!**\n\n"
-            f"👥 **Total Members:** {total_count}\n"
-            f"🗑️ **Deleted Accounts:** {deleted_count}\n"
-            f"👤 **Active Members:** {total_count - deleted_count}\n\n"
-            f"_Group is now clean!_ ✨"
-        )
-        
-    except Exception as e:
-        await processing_msg.edit_text(f"❌ **Error:** {str(e)}")
+        # Simple Regex to extract results (Lightweight)
+        results = re.findall(r'<a class="result__a" href="([^"]+)">([^<]+)</a>', text)
+        return results[:5] if results else []
 
-# --- PINNED MOVIES SYSTEM ---
-@app.on_message(filters.command(["pinmovie", "feature"]) & filters.group)
-async def pin_movie_command(client: Client, message: Message):
-    """Pin important movie messages"""
-    if not await is_group_admin(client, message.chat.id, message.from_user.id):
-        msg = await message.reply_text("❌ **Only admins can pin messages!**")
-        await asyncio.sleep(5)
-        await msg.delete()
-        return
-    
-    if not message.reply_to_message:
-        msg = await message.reply_text("❌ **Reply to a movie message to pin it!**")
-        await asyncio.sleep(5)
-        await msg.delete()
-        return
-    
-    try:
-        await client.pin_chat_message(
-            message.chat.id,
-            message.reply_to_message.id,
-            disable_notification=False
-        )
-        
-        confirmation = await message.reply_text(
-            "📌 **Movie Pinned Successfully!**\n\n"
-            "This movie will stay at the top for easy access. 🎬"
-        )
-        await asyncio.sleep(5)
-        await confirmation.delete()
-        await message.delete()
-        
-    except Exception as e:
-        await message.reply_text(f"❌ **Error:** Cannot pin message. Make sure I have pin permissions!")
+    @staticmethod
+    async def get_anime_info(query: str):
+        """Fetch Anime Info from Jikan API"""
+        url = f"https://api.jikan.moe/v4/anime?q={quote(query)}&limit=1"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                data = await resp.json()
+                if data.get('data'):
+                    anime = data['data'][0]
+                    return {
+                        "title": anime['title'],
+                        "score": anime.get('score', 'N/A'),
+                        "episodes": anime.get('episodes', 'Unknown'),
+                        "url": anime['url'],
+                        "synopsis": anime.get('synopsis', 'No details available.')[:200] + "..."
+                    }
+        return None
 
-# --- DYNAMIC MOVIE OF THE DAY (UPDATED) ---
-@app.on_message(filters.command(["movieoftheday", "motd"]) & filters.group)
-async def movie_of_the_day(client: Client, message: Message):
-    """Fully Dynamic Movie of the Day using OMDb"""
-    
-    # Random popular keywords for dynamic discovery
-    keywords = ["Avengers", "Batman", "Spider", "Iron", "Mission", "Fast", "Harry", "Jawan", "Pathaan", "KGF", "Pushpa", "Avatar", "Titanic", "Inception"]
-    random_query = random.choice(keywords)
-    
-    # OMDb se fetch karein
-    data = await MovieBotUtils.get_omdb_info(random_query)
-    
-    if "Movie Information" in data:
-        # Text ko thoda modify karein header ke liye
-        content = data.replace("🎬 **Movie Information** 🎬", f"🎬 **MOVIE OF THE DAY** 🎬\n\n✨ **Featured Pick:** {random_query}")
+    # --- MOVIE/SERIES FORMAT VALIDATION (UPDATED) ---
+    @staticmethod
+    def validate_movie_format(text: str) -> dict:
+        text_lower = text.lower().strip()
         
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔎 Search This Movie", switch_inline_query_current_chat=f"/request {random_query}")]
-        ])
-        await message.reply_text(content, reply_markup=buttons)
-    else:
-        # Fallback agar API fail ho
-        fallback_movies = [
-            {"title": "Kalki 2898 AD", "year": "2024", "genre": "Sci-Fi/Action"},
-            {"title": "Pushpa 2: The Rule", "year": "2024", "genre": "Action/Drama"},
-            {"title": "Jawan", "year": "2023", "genre": "Action/Thriller"},
-            {"title": "Animal", "year": "2023", "genre": "Action/Drama"},
-            {"title": "Gadar 2", "year": "2023", "genre": "Action/Drama"},
-            {"title": "OMG 2", "year": "2023", "genre": "Drama/Comedy"},
+        # Updated Junk Words for OMDb Logic
+        junk_words_list = [
+            "dedo", "chahiye", "chaiye", "season", "bhejo", "send", "kardo", "karo", "do",
+            "plz", "pls", "please", "request", "mujhe", "mereko", "koi", "link", 
+            "download", "movie", "film", "series", "full", "hd", "480p", "720p", "1080p", 
+            "webseries", "episode", "dubbed", "hindi", "dual", "audio", "print", "org",
+            "movies", "dena", "admin", "yaar", "upload", "uploded", "zaldi", "fast"
         ]
         
-        movie = random.choice(fallback_movies)
+        # 2. Check karo user ne kon se junk words use kiye
+        found_junk = []
+        words = text_lower.split()
         
-        motd_text = f"""
-🎬 **MOVIE OF THE DAY** 🎬
-
-🌟 **{movie['title']} ({movie['year']})**
-🎭 **Genre:** {movie['genre']}
-📅 **Featured:** {datetime.datetime.now().strftime('%d %B %Y')}
-
-📌 **Why Watch Today?**
-This movie is trending with excellent reviews!
-
-💬 **Share your reviews below!**
-"""
+        # Language detect (Simple logic)
+        languages = {'hindi', 'english', 'tamil', 'telugu', 'malayalam', 'kannada', 'marathi'}
+        detected_lang = ""
         
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔎 Search This Movie", switch_inline_query_current_chat=f"/request {movie['title']}")],
-            [InlineKeyboardButton("📋 Request Similar", callback_data="request_similar")]
-        ])
+        # Clean Text Generation
+        clean_words = []
+        for word in words:
+            # Punctuation htao check karne ke liye
+            clean_w = re.sub(r'[^\w]', '', word)
+            
+            if clean_w in junk_words_list:
+                if clean_w not in found_junk:
+                    found_junk.append(clean_w)
+            elif clean_w in languages:
+                detected_lang = clean_w.title()
+            else:
+                clean_words.append(word)
+                
+        clean_text = " ".join(clean_words).title()
         
-        await message.reply_text(motd_text, reply_markup=buttons)
-
-# --- QUICK POLL FOR MOVIES ---
-@app.on_message(filters.command(["poll", "moviepoll"]) & filters.group)
-async def create_movie_poll(client: Client, message: Message):
-    """Create a movie poll"""
-    if not await is_group_admin(client, message.chat.id, message.from_user.id):
-        msg = await message.reply_text("❌ **Only admins can create polls!**")
-        await asyncio.sleep(5)
-        await msg.delete()
-        return
-    
-    if len(message.command) < 2:
-        options = ["Kalki 2898 AD", "Pushpa 2", "Jawan", "Animal", "Gadar 2"]
-    else:
-        options = message.command[1:]
-        if len(options) < 2:
-            await message.reply_text("❌ **Please provide at least 2 options!**")
-            return
-        if len(options) > 10:
-            options = options[:10]
-    
-    try:
-        poll = await client.send_poll(
-            chat_id=message.chat.id,
-            question="🎬 **Which movie should we feature next?**",
-            options=options,
-            is_anonymous=False,
-            allows_multiple_answers=False
-        )
-        
-        await client.pin_chat_message(message.chat.id, poll.id)
-        await message.delete()
-        
-    except Exception as e:
-        await message.reply_text(f"❌ **Cannot create poll:** {str(e)}")
-
-# --- BULK DELETE MESSAGES ---
-@app.on_message(filters.command(["purge", "clearchat"]) & filters.group)
-async def purge_messages(client: Client, message: Message):
-    """Delete multiple messages"""
-    if not await is_group_admin(client, message.chat.id, message.from_user.id):
-        msg = await message.reply_text("❌ **Only admins can purge messages!**")
-        await asyncio.sleep(5)
-        await msg.delete()
-        return
-    
-    if not message.reply_to_message:
-        msg = await message.reply_text("❌ **Reply to a message to start purging from there!**")
-        await asyncio.sleep(5)
-        await msg.delete()
-        return
-    
-    try:
-        message_ids = []
-        start_id = message.reply_to_message.id
-        end_id = message.id
-        
-        for msg_id in range(start_id, end_id + 1):
-            message_ids.append(msg_id)
-        
-        # Delete in chunks of 100 (Telegram limit)
-        for i in range(0, len(message_ids), 100):
-            chunk = message_ids[i:i + 100]
-            await client.delete_messages(message.chat.id, chunk)
-            await asyncio.sleep(1)
-        
-        # Send confirmation
-        confirmation = await message.reply_text(
-            f"✅ **Purged {len(message_ids)} messages successfully!**"
-        )
-        await asyncio.sleep(5)
-        await confirmation.delete()
-        
-    except Exception as e:
-        await message.reply_text(f"❌ **Error:** {str(e)}")
-
-# --- GROUP STATISTICS ---
-@app.on_message(filters.command(["groupstats", "ginfo"]) & filters.group)
-async def group_statistics(client: Client, message: Message):
-    """Show group statistics"""
-    try:
-        chat = await client.get_chat(message.chat.id)
-        member_count = await client.get_chat_members_count(message.chat.id)
-        
-        admin_count = 0
-        bot_count = 0
-        deleted_count = 0
-        
-        async for member in client.get_chat_members(message.chat.id):
-            if member.user.is_bot:
-                bot_count += 1
-            if member.user.is_deleted:
-                deleted_count += 1
-            if member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
-                if not member.user.is_bot:
-                    admin_count += 1
-        
-        stats_text = f"""
-📊 **GROUP STATISTICS**
-
-🏷️ **Name:** {chat.title}
-👥 **Total Members:** {member_count}
-👑 **Admins:** {admin_count}
-🤖 **Bots:** {bot_count}
-🗑️ **Deleted Accounts:** {deleted_count}
-👤 **Active Users:** {member_count - bot_count - deleted_count}
-
-📅 **Created:** {chat.date.strftime('%d %b %Y') if chat.date else 'N/A'}
-🔗 **Username:** @{chat.username if chat.username else 'Private'}
-🆔 **Group ID:** `{message.chat.id}`
-
-📈 **Activity:** Active
-⚡ **Status:** Running
-"""
-        
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Refresh", callback_data="refresh_group_stats")]
-        ])
-        
-        await message.reply_text(stats_text, reply_markup=buttons)
-        
-    except Exception as e:
-        await message.reply_text(f"❌ **Error:** {str(e)}")
-
-# --- AUTO RESPONDER FOR COMMON QUESTIONS ---
-@app.on_message(filters.group & filters.regex(r'(?i)(how|where|when).*(download|watch|get).*(movie|film|series)'))
-async def auto_respond_download(client: Client, message: Message):
-    """Auto respond to common download questions"""
-    if await is_group_admin(client, message.chat.id, message.from_user.id):
-        return
-    
-    response_text = """
-🔍 **Looking for Movies?**
-
-📌 **How to Find Movies:**
-1. Use proper format: `Movie Name (Year)`
-2. Check pinned messages for available content
-3. Use `/request` command for specific movies
-4. Browse through group files/search
-
-🚫 **Important:**
-• Direct download links are not allowed
-• Respect copyright laws
-• Support official platforms when possible
-
-🎬 **Official Platforms:**
-• Netflix, Amazon Prime, Hotstar
-• YouTube Movies, Google Play
-• Theater releases
-
-Need help? Ask admins politely! 😊
-"""
-    
-    response = await message.reply_text(response_text)
-    await asyncio.sleep(120)
-    await response.delete()
-
-# --- WELCOME MESSAGE IMPROVEMENT ---
-async def send_improved_welcome(client, chat_id, user):
-    """Send improved welcome message with user photo"""
-    try:
-        welcome_text = f"""
-🎉 **WELCOME TO THE COMMUNITY!** 🎉
-
-👤 **New Member:** {user.mention}
-🆔 **User ID:** `{user.id}`
-📅 **Joined:** {datetime.datetime.now().strftime('%d %B %Y')}
-
-✨ **Group Rules:**
-✅ Use proper movie format
-✅ No spam or links
-✅ Respect all members
-✅ Follow admin instructions
-
-🎬 **Getting Started:**
-• Use `/help` for commands
-• Check pinned messages
-• Request movies properly
-
-Enjoy your stay! 🍿
-"""
-        
-        buttons = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📋 Group Rules", callback_data="show_rules")],
-            [InlineKeyboardButton("🎬 Request Movie", switch_inline_query_current_chat="/request ")],
-            [InlineKeyboardButton("🤖 Bot Help", callback_data="help_main")]
-        ])
-        
-        if user.photo:
-            try:
-                welcome_msg = await client.send_photo(
-                    chat_id,
-                    photo=user.photo.big_file_id,
-                    caption=welcome_text,
-                    reply_markup=buttons
-                )
-            except:
-                welcome_msg = await client.send_message(
-                    chat_id,
-                    welcome_text,
-                    reply_markup=buttons
-                )
+        # Format banao
+        if detected_lang:
+            correct_format = f"{clean_text} [{detected_lang}]"
         else:
-            welcome_msg = await client.send_message(
-                chat_id,
-                welcome_text,
-                reply_markup=buttons
-            )
-        
-        await asyncio.sleep(300)
-        await welcome_msg.delete()
-        
-    except Exception as e:
-        print(f"Welcome error: {e}")
+            correct_format = clean_text
 
-# --- CALLBACK HANDLERS FOR NEW FEATURES ---
-@app.on_callback_query(filters.regex(r'^refresh_group_stats$'))
-async def refresh_group_stats_callback(client, query):
-    """Refresh group statistics"""
-    try:
-        chat = await client.get_chat(query.message.chat.id)
-        member_count = await client.get_chat_members_count(query.message.chat.id)
-        
-        stats_text = f"""
-📊 **GROUP STATISTICS (Refreshed)**
-
-🏷️ **Name:** {chat.title}
-👥 **Members:** {member_count}
-📅 **Updated:** {datetime.datetime.now().strftime('%H:%M:%S')}
-
-🔧 **Bot Features Active:**
-✅ Spelling Correction
-✅ Auto Format Check
-✅ Movie Requests
-✅ AI Assistance
-✅ Bio Protection
-
-⚡ **Status:** All Systems Operational
-"""
-        
-        await query.message.edit_text(stats_text)
-        await query.answer("✅ Stats refreshed!")
-        
-    except Exception as e:
-        await query.answer("❌ Error refreshing stats!")
-
-@app.on_callback_query(filters.regex(r'^show_rules$'))
-async def show_rules_callback(client, query):
-    """Show group rules"""
-    rules_text = """
-📜 **GROUP RULES**
-
-1. 🎬 **Movie Format:**
-   • Use: `Movie Name (Year)`
-   • Example: `Kalki 2898 AD (2024)`
-   • Series: `Stranger Things S01E01`
-
-2. 🚫 **Strictly Prohibited:**
-   • Direct download links
-   • Spam messages
-   • Abusive language
-   • Promotion without permission
-   • Links/Usernames in bio
-
-3. ✅ **Allowed:**
-   • Movie requests
-   • Discussions/reviews
-   • Helpful content
-   • Proper queries
-
-4. 👑 **Admin Authority:**
-   • Admins can warn/mute/ban
-   • Follow admin instructions
-   • Respect all decisions
-
-5. 🤝 **Community Spirit:**
-   • Help other members
-   • Share knowledge
-   • Maintain positivity
-
-⚠️ **Violation may result in mute/ban!**
-"""
+        # Return dict me 'found_junk' add kiya hai
+        return {
+            'is_valid': len(found_junk) == 0, # Agar junk mila to invalid
+            'found_junk': found_junk,         # Ye list bot use karega message me
+            'clean_name': clean_text,
+            'correct_format': correct_format,
+            'search_query': clean_text.replace(" ", "+")
+        }
     
-    await query.message.reply_text(rules_text)
-    await query.answer("📜 Rules displayed!")
-
-@app.on_callback_query(filters.regex(r'^request_similar$'))
-async def request_similar_callback(client, query):
-    """Request similar movies"""
-    await query.message.reply_text(
-        "🎬 **Request Similar Movie**\n\n"
-        "Please use the format:\n"
-        "`/request Movie Name`\n\n"
-        "Example: `/request Inception`"
-    )
-    await query.answer()
-
-# --- SCHEDULED MOVIE UPDATES ---
-async def scheduled_movie_updates(client: Client):
-    """Send scheduled movie updates to groups"""
-    while True:
+    # --- CREATE FORMATTED MESSAGE ---
+    @staticmethod
+    def create_format_message(user_name: str, original_text: str, validation_result: dict, group_username: str = "") -> tuple:
+        """Returns (message_text, keyboard_markup)"""
+        
+        # Create main message
+        lines = [
+            "╔══════════════════╗",
+            "✨ **FORMAT CORRECTION** ✨",
+            "╚══════════════════╝",
+            "",
+            f"👤 **User:** {user_name}",
+            f"❌ **Wrong Format:** `{original_text}`",
+            f"✅ **Correct Format:** {validation_result['correct_format']}",
+            "",
+            "📌 **Format Rules:**",
+            "• Movie: **Movie Name (Year) [Language]**",
+            "• Series: **Series Name S01 E01 (Year) [Language]**",
+            "",
+            "🔍 **Examples:**",
+            "• `kalki 2024 hindi` → **Kalki (2024) [Hindi]**",
+            "• `stranger things s01 e01` → **Stranger Things S01 E01**",
+            ""
+        ]
+        
+        message_text = "\n".join(lines)
+        
+        # Create search button with proper link
+        if group_username:
+            # Remove @ if present
+            group_name = group_username.replace('@', '')
+            search_query = validation_result['search_query']
+            search_url = f"https://t.me/{group_name}?start={search_query}"
+            
+            buttons = [
+                [InlineKeyboardButton("🔍 Search Again", url=search_url)],
+                [InlineKeyboardButton("📋 Copy Format", callback_data=f"copy_{validation_result['clean_name']}")]
+            ]
+        else:
+            buttons = [
+                [InlineKeyboardButton("📋 Copy Format", callback_data=f"copy_{validation_result['clean_name']}")]
+            ]
+        
+        return message_text, InlineKeyboardMarkup(buttons)
+    
+    # --- AI RESPONSE (UPDATED) ---
+    @staticmethod
+    async def get_ai_response(query: str, context: str = "") -> str:
+        """Get AI response with better handling"""
         try:
-            await asyncio.sleep(6 * 3600)
+            # Check if server is busy
+            if random.random() < 0.1:  # 10% chance of simulated busy
+                return "🤖 **AI Server Busy**\n\nPlease try again in a few moments! ⏳"
             
-            groups = await get_all_groups()
+            movie_keywords = ["movie", "film", "series", "web series", "show", "episode", 
+                            "imdb", "rating", "cast", "director", "review", "download",
+                            "watch", "stream", "ott", "netflix", "amazon", "hotstar"]
             
-            for group_id in groups:
-                try:
-                    group_data = await get_group(group_id)
-                    if not group_data or not group_data.get("active", True):
-                        continue
-                    
-                    # Get dynamic movie info
-                    keywords = ["Avengers", "Batman", "Spider", "Iron", "Mission", "Fast", "Harry"]
-                    random_query = random.choice(keywords)
-                    movie_info = await MovieBotUtils.get_omdb_info(random_query)
-                    
-                    if "Movie Information" in movie_info:
-                        update_text = f"""
-🎬 **DAILY MOVIE UPDATE** 🎬
-
-{movie_info}
-
-💡 **Tip:** Use `/request` command to request this movie!
-
-Happy Watching! 🍿
-"""
-                    else:
-                        update_text = """
-🎬 **DAILY MOVIE UPDATE** 🎬
-
-🌟 **Trending Now:**
-1. Kalki 2898 AD
-2. Pushpa 2 The Rule
-3. Jawan
-4. Animal
-5. Gadar 2
-
-🎯 **Today's Recommendation:**
-Watch **Kalki 2898 AD** for an epic sci-fi experience!
-
-💡 **Tip:** Use proper format when requesting movies.
-
-Happy Watching! 🍿
-"""
-                    
-                    await client.send_message(group_id, update_text)
-                    await asyncio.sleep(2)
-                    
-                except Exception as e:
-                    continue
-                    
+            is_movie_query = any(keyword in query.lower() for keyword in movie_keywords)
+            
+            if is_movie_query:
+                prompt = f"""User is asking about: '{query}'. 
+                Provide Movie/Series Name, Year, Rating, Genre and a short review in Hinglish with emojis.
+                Keep it under 150 words."""
+            else:
+                prompt = f"""User says: '{query}'. 
+                Reply as a helpful assistant in Hinglish with emojis.
+                Keep it friendly and under 100 words."""
+            
+            # Add context if available
+            if context:
+                prompt = f"Context: {context}\n\n{prompt}"
+            
+            response = await g4f.ChatCompletion.create_async(
+                model=Config.G4F_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                timeout=30
+            )
+            
+            if not response.strip():
+                if is_movie_query:
+                    return "🎬 **Movie Information**\n\nSorry, couldn't fetch details right now. Please try the official IMDB website for accurate information! 📡"
+                else:
+                    return "🤖 **AI Response**\n\nHmm, let me think... Actually, why don't you ask me about movies? I'm great at that! 🍿"
+            
+            # Format response nicely
+            formatted_response = f"🤖 **AI Response**\n\n{response.strip()}\n\n✨ *Powered by Movie Helper Bot*"
+            return formatted_response
+            
         except Exception as e:
-            print(f"Scheduled update error: {e}")
-            await asyncio.sleep(60)
+            print(f"AI Error: {e}")
+            return "🤖 **AI Server Busy**\n\nOur AI is currently processing many requests. Please try again in a few minutes! ⏳"
+    
+    # --- OMDb INFO ---
+    @staticmethod
+    async def get_omdb_info(movie_name: str) -> str:
+        """Get movie info using OMDb"""
+        try:
+            url = f"http://www.omdbapi.com/?t={quote(movie_name)}&apikey={Config.OMDB_API_KEY}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=10) as resp:
+                    data = await resp.json()
+            
+            if data.get("Response") == "True":
+                title = data.get("Title", "N/A")
+                year = data.get("Year", "N/A")
+                rating = data.get("imdbRating", "N/A")
+                genre = data.get("Genre", "N/A")
+                plot = data.get("Plot", "N/A")[:150]
+                
+                response_lines = [
+                    "🎬 **Movie Information** 🎬",
+                    "",
+                    f"📝 **Title:** {title}",
+                    f"📅 **Year:** {year}",
+                    f"⭐ **Rating:** {rating}/10",
+                    f"🎭 **Genre:** {genre}",
+                    f"📖 **Plot:** {plot}...",
+                    "",
+                    f"🔗 **IMDb:** https://www.imdb.com/title/{data.get('imdbID', '')}/",
+                    "",
+                    "_Enjoy watching! 🍿_"
+                ]
+                
+                return "\n".join(response_lines)
+            return "❌ **Movie Not Found**\n\nSorry, couldn't find details for this movie on IMDb."
+        except:
+            return "❌ **IMDb Service Unavailable**\n\nPlease check the movie name and try again later."
+    
+    # --- MESSAGE QUALITY CHECK (UPDATED) ---
+    @staticmethod
+    def check_message_quality(text: str) -> str:
+        """
+        Returns: 'CLEAN', 'JUNK', 'LINK', 'ABUSE', or 'IGNORE'
+        """
+        text_lower = text.lower().strip()
+        
+        # A. 🔗 LINK DETECTION
+        link_patterns = [
+            r't\.me/', r'telegram\.me/', r'http://', r'https://', 
+            r'www\.', r'\.com', r'\.in', r'\.net', r'\.org', r'\.io',
+            r'joinchat', r'bit\.ly', r'tinyurl', r'goo\.gl', r'shorturl'
+        ]
+        for pattern in link_patterns:
+            if re.search(pattern, text_lower):
+                return "LINK"
+        
+        # B. 🤬 ABUSE WORDS
+        abuse_words = [
+            "mc", "bc", "bkl", "mkl", "chutiya", "kutta", "kamina", "fuck", 
+            "bitch", "sex", "porn", "randi", "gand", "lund", "bhosda", 
+            "madarchod", "behenchod", "harami", "ullu", "gadha", "bewakuf",
+            "idiot", "stupid", "moron", "lauda", "chut", "gaand", "bsdk",
+            "bhadwa", "chodu", "gandu", "lavde", "rand", "kutti", "kamina",
+            "gandu", "motherfucker", "asshole", "bastard", "bloody", "damn"
+        ]
+        
+        words = text_lower.split()
+        for word in abuse_words:
+            if word in words:
+                return "ABUSE"
+        
+        # C. 🚫 JUNK WORDS
+        junk_words = [
+            "dedo", "chahiye", "chaiye", "mangta", "bhej", "send", "kardo", 
+            "karo", "do", "plz", "pls", "please", "request", "link", "download", 
+            "downlod", "movie", "film", "series", "season", "episode", "hd", 
+            "480p", "720p", "1080p", "bhai", "bro", "sir", "admin", "yaar", 
+            "hello", "hi", "hey", "lunch", "dinner", "mujhe", "mereko", "koi",
+            "full", "complete", "part", "version", "print", "quality", "bluray",
+            "webdl", "torrent", "magnet", "subtitle", "dual", "audio", "dubbed"
+        ]
+        
+        for word in junk_words:
+            if word in words:
+                for w in words:
+                    clean_w = w.strip('.,!?;:')
+                    if clean_w == word:
+                        return "JUNK"
+        
+        # D. ✅ CLEAN FORMAT
+        clean_pattern = r'^[a-zA-Z0-9\s\-\:\'\&]+(?:\s\d{4})?(?:\s?[Ss]\d{1,2})?(?:\s?[Ee]\d{1,2})?$'
+        if re.match(clean_pattern, text, re.IGNORECASE):
+            return "CLEAN"
+        
+        return "IGNORE"
+    
+    # --- SPELLING SUGGESTION ---
+    @staticmethod
+    def get_spelling_suggestion(user_text: str, movie_list: list) -> Optional[str]:
+        """Suggest correct spelling"""
+        matches = difflib.get_close_matches(user_text, movie_list, n=1, cutoff=0.5)
+        if matches:
+            return matches[0]
+        return None
+    
+    # --- EXTRACT CLEAN NAME ---
+    @staticmethod
+    def extract_movie_name(text: str) -> str:
+        """Extract clean movie/series name"""
+        text = text.lower()
+        
+        # Remove common words
+        remove_words = [
+            "download", "movie", "film", "series", "link", "dedo", "chahiye", 
+            "plz", "pls", "bhai", "season", "episode", "full", "hd", "hindi", 
+            "english", "dual", "dubbed", "request", "send", "give", "me", 
+            "please", "want", "need", "looking", "for", "ka", "ki", "ke"
+        ]
+        
+        for word in remove_words:
+            text = text.replace(word, "")
+        
+        # Clean up
+        text = re.sub(r'[^\w\s]', '', text)
+        text = ' '.join(text.split())
+        
+        if len(text) > 1:
+            return text.title()
+        return ""
+    
+    # --- SYSTEM UTILS ---
+    @staticmethod
+    async def auto_delete_message(client, message, delay: int = Config.AUTO_DELETE_TIME):
+        await asyncio.sleep(delay)
+        try:
+            await client.delete_messages(message.chat.id, message.id)
+        except:
+            pass
+    
+    @staticmethod
+    async def broadcast_messages(client, chat_ids, message_text, delay: float = Config.BROADCAST_DELAY):
+        success = 0
+        failed = 0
+        for chat_id in chat_ids:
+            try:
+                await client.send_message(chat_id, message_text)
+                success += 1
+                await asyncio.sleep(delay)
+            except Exception as e:
+                failed += 1
+        return success, failed
