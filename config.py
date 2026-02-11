@@ -24,21 +24,19 @@ class Config:
     OMDB_API_KEY = os.getenv("OMDB_API_KEY", "6ed172d8")
     
     # Additional Config
-    # Default 300 seconds (5 Min) agar env mein set nahi hai
-    AUTO_DELETE_TIME = int(os.getenv("AUTO_DELETE_TIME", 300))
+    AUTO_DELETE_TIME = 300  # Seconds to auto-delete bot messages
     BROADCAST_DELAY = 0.5  # Seconds between broadcasts
     SPELLING_CHECK_TIMEOUT = 10  # Timeout for spelling checks
     
-    # Protection & Limits
+    # --- ADDED THESE LINES TO FIX CRASH ---
     MAX_WARNINGS = 3  # For abuse/link warnings
     CLEANUP_INTERVAL = 3600 # 1 Hour for background tasks
     
-    # Channels
+    # Force Sub Channel
     FORCE_SUB_CHANNEL = os.getenv("FORCE_SUB_CHANNEL", "@asbhai_bsr")
+    
+    # Logs Channel
     LOGS_CHANNEL = int(os.getenv("LOGS_CHANNEL", -1002352329534))
     
-    # Features Toggle
-    ENABLE_BIO_PROTECTION = True
-    ENABLE_COPYRIGHT_PROTECTION = True
-    ENABLE_CLEANJOIN = True
-    ENABLE_SEARCH_FEATURES = True
+    # Welcome Settings
+    WELCOME_WITH_PHOTO = True  # Default welcome with photo
