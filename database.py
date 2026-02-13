@@ -1,3 +1,5 @@
+# database.py
+
 import motor.motor_asyncio
 import datetime
 from datetime import timedelta
@@ -18,7 +20,31 @@ deleted_data_col = db["deleted_data"]
 bot_status_col = db["bot_status"]
 bio_warnings_col = db["bio_warnings"]
 spelling_cache_col = db["spelling_cache"]
-fsub_verified_col = db["fsub_verified"]  # ✅ NAYA: Force subscribe verified users
+daily_limits_col = db["daily_limits"]  # NEW COLLECTION
+
+# ================ DAILY LIMIT SYSTEM (NEW) ================
+async def check_daily_limit(user_id):
+    """Check if user has used advanced search today"""
+    today = datetime.datetime.now().strftime('%Y-%m-%d')
+    data = await daily_limits_col.find_one({"user_id": user_id, "date": today})
+    
+    if not data:
+        return True
+    
+    return data["count"] < 1
+
+async def increment_daily_limit(user_id):
+    """Increment user's daily usage count"""
+    today = datetime.datetime.now().strftime('%Y-%m-%d')
+    await daily_limits_col.update_one(
+        {"user_id": user_id, "date": today},
+        {"$inc": {"count": 1}},
+        upsert=True
+    )
+
+async def reset_daily_limits():
+    """Reset all daily limits (called by scheduler)"""
+    await daily_limits_col.delete_many({})
 
 # ================ USER FUNCTIONS ================
 async def add_user(user_id, username=None, first_name=None, last_name=None):
@@ -111,7 +137,6 @@ async def mark_bot_removed(group_id, status=True):
     
     if status:
         await remove_force_sub(group_id)
-        await remove_all_fsub_verified(group_id)  # ✅ Group remove to verified bhi hatao
 
 async def verify_group_active(client, group_id):
     try:
@@ -178,9 +203,7 @@ async def get_settings(chat_id):
             "ai_chat_on": False,
             "bad_words_filter": True,
             "link_filter": True,
-            "welcome_photo": True,
-            "fsub_strict": True,  # ✅ NAYA: strict mode ya soft mode
-            "fsub_welcome_msg": "🔒 **Group Locked!**\n\nHello {name}! 👋\n\nIs group mein message karne ke liye pehle hamara **channel join karna hoga**:\n\n📢 **{channel}**\n\n✅ Channel join karo\n✅ \"I've Joined\" button dabao\n✅ Phir message kar sakoge\n\n_Join karne ke baad auto-unmute ho jaoge!_ 🎉"
+            "welcome_photo": True
         }
         try:
             await settings_col.insert_one(default_settings)
@@ -193,9 +216,6 @@ async def get_settings(chat_id):
     if "bad_words_filter" not in settings: updates["bad_words_filter"] = True
     if "link_filter" not in settings: updates["link_filter"] = True
     if "welcome_photo" not in settings: updates["welcome_photo"] = True
-    if "fsub_strict" not in settings: updates["fsub_strict"] = True
-    if "fsub_welcome_msg" not in settings: 
-        updates["fsub_welcome_msg"] = "🔒 **Group Locked!**\n\nHello {name}! 👋\n\nIs group mein message karne ke liye pehle hamara **channel join karna hoga**:\n\n📢 **{channel}**\n\n✅ Channel join karo\n✅ \"I've Joined\" button dabao\n✅ Phir message kar sakoge\n\n_Join karne ke baad auto-unmute ho jaoge!_ 🎉"
     
     if updates:
         await settings_col.update_one({"_id": chat_id}, {"$set": updates})
@@ -228,19 +248,11 @@ async def get_welcome_message(chat_id):
         return settings["welcome_data"]
     return None
 
-# ================ FORCE SUB FUNCTIONS (✅ UPDATED) ================
-async def set_force_sub(chat_id, channel_id, channel_title=None, channel_link=None):
-    """Force subscribe channel set karo with full details"""
+# ================ FORCE SUB FUNCTIONS ================
+async def set_force_sub(chat_id, channel_id):
     await force_sub_col.update_one(
         {"_id": chat_id},
-        {
-            "$set": {
-                "channel_id": channel_id,
-                "channel_title": channel_title or "Channel",
-                "channel_link": channel_link or f"https://t.me/c/{str(channel_id)[4:]}",
-                "created_at": datetime.datetime.now()
-            }
-        },
+        {"$set": {"channel_id": channel_id, "created_at": datetime.datetime.now()}},
         upsert=True
     )
 
@@ -249,45 +261,6 @@ async def get_force_sub(chat_id):
 
 async def remove_force_sub(chat_id):
     await force_sub_col.delete_one({"_id": chat_id})
-    await remove_all_fsub_verified(chat_id)  # ✅ Group ke saare verified users hatao
-
-# ✅ NAYA: Force subscribe verified user add karo
-async def add_fsub_verified(chat_id, user_id):
-    """User ne verify kar liya to database mein store karo"""
-    await fsub_verified_col.update_one(
-        {"chat_id": chat_id, "user_id": user_id},
-        {
-            "$set": {
-                "verified_at": datetime.datetime.now(),
-                "expiry": datetime.datetime.now() + datetime.timedelta(days=7)  # 7 days tak valid
-            }
-        },
-        upsert=True
-    )
-
-# ✅ NAYA: Check if user already verified
-async def is_fsub_verified(chat_id, user_id):
-    """Kya user pehle verify kar chuka hai?"""
-    data = await fsub_verified_col.find_one({"chat_id": chat_id, "user_id": user_id})
-    if data:
-        expiry = data.get("expiry")
-        if expiry and expiry > datetime.datetime.now():
-            return True
-        else:
-            await fsub_verified_col.delete_one({"chat_id": chat_id, "user_id": user_id})
-    return False
-
-# ✅ NAYA: Remove verified user
-async def remove_fsub_verified(chat_id, user_id):
-    await fsub_verified_col.delete_one({"chat_id": chat_id, "user_id": user_id})
-
-# ✅ NAYA: Remove all verified users of a group
-async def remove_all_fsub_verified(chat_id):
-    await fsub_verified_col.delete_many({"chat_id": chat_id})
-
-# ✅ NAYA: Get verified users count
-async def get_fsub_verified_count(chat_id):
-    return await fsub_verified_col.count_documents({"chat_id": chat_id})
 
 async def check_fsub_member(client, channel_id, user_id):
     try:
@@ -329,14 +302,13 @@ async def get_spelling_cache(movie_name):
             return cache.get("data")
     return None
 
-async def set_spelling_cache(movie_name, data, ttl=3600):
+async def set_spelling_cache(movie_name, data):
     await spelling_cache_col.update_one(
         {"_id": movie_name.lower()},
         {
             "$set": {
                 "data": data,
-                "cached_at": datetime.datetime.now(),
-                "ttl": ttl
+                "cached_at": datetime.datetime.now()
             }
         },
         upsert=True
@@ -350,7 +322,7 @@ async def clear_junk():
         "old_warnings": 0,
         "old_requests": 0,
         "bio_warnings": 0,
-        "expired_fsub": 0
+        "old_limits": 0
     }
     
     try:
@@ -374,9 +346,10 @@ async def clear_junk():
         })
         deleted_count["old_requests"] = result.deleted_count
         
-        # ✅ Expired fsub verified users delete
-        result = await fsub_verified_col.delete_many({"expiry": {"$lt": datetime.datetime.now()}})
-        deleted_count["expired_fsub"] = result.deleted_count
+        # Clean old daily limits
+        yesterday = (datetime.datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        result = await daily_limits_col.delete_many({"date": {"$lt": yesterday}})
+        deleted_count["old_limits"] = result.deleted_count
         
         removed_groups = await groups_col.find({"bot_removed": True}).to_list(length=None)
         for group in removed_groups:
@@ -450,8 +423,7 @@ async def get_bot_stats():
         "premium_groups": 0,
         "active_groups": await groups_col.count_documents({"active": True, "bot_removed": {"$ne": True}}),
         "pending_requests": await movie_requests_col.count_documents({"status": "pending"}),
-        "total_requests": await movie_requests_col.count_documents({}),
-        "total_fsub_verified": await fsub_verified_col.count_documents({})
+        "total_requests": await movie_requests_col.count_documents({})
     }
     
     async for group in groups_col.find({"bot_removed": {"$ne": True}}):
