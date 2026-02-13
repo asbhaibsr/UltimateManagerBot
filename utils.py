@@ -1,3 +1,6 @@
+# utils.py - Movie Helper Bot Utilities File
+# Updated with Welcome Image, OMDb Data, Admin Mentions, and Daily Limit System
+
 import re
 import aiohttp
 import asyncio
@@ -11,8 +14,8 @@ from urllib.parse import quote
 from PIL import Image, ImageDraw, ImageFont
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ChatMemberStatus
-from pyrogram.errors import UserNotParticipant, ChatAdminRequired
-from database import get_spelling_cache, set_spelling_cache, is_fsub_verified, add_fsub_verified
+from pyrogram.errors import UserNotParticipant
+from database import get_spelling_cache, set_spelling_cache
 
 
 class MovieBotUtils:
@@ -25,7 +28,6 @@ class MovieBotUtils:
     _google_cache = {}
     _movie_cache = {}
     _ai_cache = {}
-    _fsub_check_cache = {}  # ✅ NAYA: FSUB check cache
     
     # --- 1. BIO PROTECTION (SMARTDEV LOGIC) ---
     @staticmethod
@@ -84,90 +86,103 @@ class MovieBotUtils:
         else:
             return f"⚠️ **Warning:** Bio mein `{issues_text}` hai. Please hatao warna action hoga!"
     
-    # --- 2. ADVANCED WELCOME STICKER (FIXED) ---
+    # --- 2. ADVANCED WELCOME IMAGE (UPDATED) ---
     @staticmethod
-    async def create_welcome_sticker(user_photo_bytes, group_name, bot_name, user_name):
-        """User ki DP ke saath welcome sticker banaye"""
+    async def create_welcome_image(user_name, user_id, profile_pic_bytes, group_name):
+        """Tumhara Custom Dark Design - Welcome Image with DP and Details"""
         try:
-            # Resize image
-            img = Image.open(io.BytesIO(user_photo_bytes)).convert("RGBA")
-            img = img.resize((512, 512), Image.Resampling.LANCZOS)
-            
-            # Circular mask
-            mask = Image.new('L', (512, 512), 0)
-            draw = ImageDraw.Draw(mask)
-            draw.ellipse((0, 0, 512, 512), fill=255)
-            
-            # Apply mask
-            output = Image.new('RGBA', (512, 512), (0, 0, 0, 0))
-            output.paste(img, (0, 0), mask)
-            
-            # Border
-            draw = ImageDraw.Draw(output)
-            draw.ellipse((0, 0, 511, 511), outline=(255, 215, 0), width=12)  # Gold border
-            draw.ellipse((6, 6, 505, 505), outline=(255, 255, 255), width=6)  # White inner
-            
-            # Try to load font, fallback to default
-            try:
-                font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
-                font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 30)
-            except:
-                font_large = ImageFont.load_default()
-                font_small = ImageFont.load_default()
-            
-            # Text
-            short_group = group_name[:20] + ".." if len(group_name) > 20 else group_name
-            
-            # Name
-            draw.text((256, 380), f"👋 {user_name[:15]}", 
-                     fill=(255, 255, 255), anchor="mm", font=font_large)
-            
-            # Welcome message
-            draw.text((256, 440), f"Welcome to", 
-                     fill=(200, 200, 200), anchor="mm", font=font_small)
-            
-            draw.text((256, 490), f"{short_group}", 
-                     fill=(255, 215, 0), anchor="mm", font=font_large)
-            
-            # Save
-            img_bytes = io.BytesIO()
-            output.save(img_bytes, format="PNG")
-            img_bytes.seek(0)
-            
-            return img_bytes
+            def make_image():
+                # --- 1. Canvas Setup ---
+                W, H = 800, 400
+                background_color = (15, 15, 25) 
+                background = Image.new('RGB', (W, H), color=background_color)
+                draw = ImageDraw.Draw(background)
+
+                # --- 2. Watermark ---
+                watermark_layer = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+                draw_watermark = ImageDraw.Draw(watermark_layer)
+                big_text = "Asbhaibsr Bots"
+                
+                try:
+                    font_big = ImageFont.truetype("arial.ttf", 110) 
+                except:
+                    font_big = ImageFont.load_default()
+
+                bbox = draw_watermark.textbbox((0, 0), big_text, font=font_big)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+                x_pos = (W - text_width) // 2
+                y_pos = (H - text_height) // 2
+                
+                draw_watermark.text((x_pos, y_pos), big_text, fill=(45, 45, 60, 150), font=font_big)
+                watermark_layer = watermark_layer.rotate(10, resample=Image.BICUBIC, center=(W//2, H//2))
+                background.paste(watermark_layer, (0, 0), watermark_layer)
+
+                # --- 3. User PFP ---
+                pfp_size = 200
+                if profile_pic_bytes:
+                    try:
+                        pfp = Image.open(io.BytesIO(profile_pic_bytes)).convert("RGBA").resize((pfp_size, pfp_size))
+                        mask = Image.new('L', (pfp_size, pfp_size), 0)
+                        draw_mask = ImageDraw.Draw(mask)
+                        draw_mask.ellipse((0, 0, pfp_size, pfp_size), fill=255)
+                        
+                        # White Border
+                        border_size = 210
+                        border_pos = 45
+                        draw.ellipse((border_pos, border_pos, border_pos + border_size, border_pos + border_size), fill=(255, 255, 255))
+                        background.paste(pfp, (50, 50), mask)
+                    except:
+                        draw.ellipse((50, 50, 250, 250), fill=(100, 100, 100))
+                else:
+                    draw.ellipse((50, 50, 250, 250), fill=(100, 100, 100))
+
+                # --- 4. Text Details ---
+                try:
+                    font_header = ImageFont.truetype("arial.ttf", 50)
+                    font_sub = ImageFont.truetype("arial.ttf", 35)
+                except:
+                    font_header = ImageFont.load_default()
+                    font_sub = ImageFont.load_default()
+
+                start_x = 300 
+                draw.text((start_x, 60), f"🤖 {Config.BOT_USERNAME}", fill="#FFD700", font=font_header)
+                draw.text((start_x, 130), f"📢 Group: {group_name[:15]}..", fill="#00FFFF", font=font_sub)
+                draw.text((start_x, 180), f"👤 Name: {user_name[:20]}", fill="white", font=font_sub)
+                draw.text((start_x, 230), f"🆔 ID: {user_id}", fill="#90EE90", font=font_sub)
+
+                output = io.BytesIO()
+                background.save(output, format="PNG")
+                output.seek(0)
+                return output
+
+            # Async Run
+            return await asyncio.get_event_loop().run_in_executor(None, make_image)
             
         except Exception as e:
-            print(f"Sticker Error: {e}")
+            print(f"Image Error: {e}")
             return None
     
-    # --- 3. ADMIN MENTIONS (LIVE FETCH) ---
+    # --- 3. ADMIN MENTIONS (LIVE FETCH - PROPER TAGGING) ---
     @staticmethod
     async def get_admin_mentions(client, chat_id):
-        """Live admin fetch - proper tagging ke liye"""
+        """Live admin fetch with proper tg://user?id= tagging"""
         mentions = []
         
         try:
-            # Owner first
-            try:
-                owner = await client.get_users(Config.OWNER_ID)
-                mentions.append(f"👑 **{owner.first_name}**")
-            except:
-                mentions.append("👑 **Owner**")
-            
-            # Group admins
-            async for member in client.get_chat_members(chat_id, filter="administrators"):
+            async for member in client.get_chat_members(chat_id, filter=ChatMemberStatus.ADMINISTRATOR):
                 if not member.user.is_bot:
-                    if member.user.id != Config.OWNER_ID:
-                        name = member.user.first_name[:15]
-                        mentions.append(f"🛡️ **{name}**")
+                    # Proper tag format - ALWAYS WORKS
+                    mentions.append(f"<a href='tg://user?id={member.user.id}'>👮 {member.user.first_name}</a>")
+            
+            if not mentions:
+                return "👮 Admins"
+            
+            return ", ".join(mentions[:5])
             
         except Exception as e:
             print(f"Admin fetch error: {e}")
-        
-        if not mentions:
-            return "👑 **Admins**"
-        
-        return "\n".join(mentions[:5])  # Max 5 admins
+            return "👮 Admins"
     
     # --- 4. MOVIE FORMAT VALIDATION (BEST) ---
     @staticmethod
@@ -250,53 +265,33 @@ class MovieBotUtils:
             'language': detected_lang
         }
     
-    # --- 5. OMDb MOVIE INFO ---
+    # --- 5. OMDb MOVIE INFO (DATA MODE) ---
     @staticmethod
-    async def get_omdb_info(movie_name: str) -> str:
-        """OMDb se movie info lao with cache"""
+    async def get_omdb_info(movie_name: str):
+        """OMDb se data lao dict format mein - NOT TEXT"""
         if not Config.OMDB_API_KEY:
-            return "❌ **Sorry!** OMDb API key nahi mil rahi.\nOwner se contact karo @asbhai_bsr"
-        
-        # Cache check
-        cached = await get_spelling_cache(f"omdb_{movie_name}")
-        if cached:
-            return cached
+            return None
         
         try:
             url = f"http://www.omdbapi.com/?t={quote(movie_name)}&apikey={Config.OMDB_API_KEY}"
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=8) as resp:
+                async with session.get(url, timeout=5) as resp:
                     if resp.status == 200:
                         data = await resp.json()
-            
-            if data.get("Response") == "True":
-                title = data.get("Title", "N/A")
-                year = data.get("Year", "N/A")
-                rating = data.get("imdbRating", "N/A")
-                genre = data.get("Genre", "N/A")
-                plot = data.get("Plot", "N/A")
-                
-                if len(plot) > 100:
-                    plot = plot[:100] + "..."
-                
-                stars = "⭐" * max(1, min(5, int(float(rating) // 2))) if rating != "N/A" else ""
-                
-                response = (
-                    f"🎬 **Movie Found!**\n\n"
-                    f"📽️ **{title}** ({year})\n"
-                    f"{stars} **IMDb:** {rating}/10\n"
-                    f"🎭 **Genre:** {genre}\n"
-                    f"📝 **Story:** {plot}\n\n"
-                    f"✅ **Sahi naam:** `{title}`"
-                )
-                
-                await set_spelling_cache(f"omdb_{movie_name}", response)
-                return response
-            else:
-                return f"❌ **'{movie_name}'** ye movie OMDb mein nahi mili!\nSpelling check karo ya kuch aur try karo."
-                
+                        if data.get("Response") == "True":
+                            return {
+                                "found": True,
+                                "title": data.get("Title", "N/A"),
+                                "year": data.get("Year", "N/A"),
+                                "rating": data.get("imdbRating", "N/A"),
+                                "genre": data.get("Genre", "N/A"),
+                                "plot": data.get("Plot", "N/A")[:150],
+                                "poster": data.get("Poster", None)
+                            }
         except Exception as e:
-            return "❌ **OMDb busy hai!** Thodi der baad try karo."
+            print(f"OMDb Error: {e}")
+            pass
+        return {"found": False}
     
     # --- 6. GOOGLE SEARCH ---
     @staticmethod
@@ -442,37 +437,15 @@ class MovieBotUtils:
         except:
             pass
     
-    # --- 11. CHECK FSUB MEMBER (✅ UPDATED WITH CACHE) ---
+    # --- 11. CHECK FSUB MEMBER ---
     @staticmethod
     async def check_fsub_member(client, channel_id, user_id):
-        """Check if user is member - with cache and database verification"""
-        cache_key = f"fsub_{channel_id}_{user_id}"
-        
-        # Memory cache check (5 minutes)
-        if cache_key in MovieBotUtils._fsub_check_cache:
-            cache_time, result = MovieBotUtils._fsub_check_cache[cache_key]
-            if (datetime.datetime.now() - cache_time).seconds < 300:  # 5 min
-                return result
-        
-        # Telegram se check
         try:
             member = await client.get_chat_member(channel_id, user_id)
-            result = member.status not in [ChatMemberStatus.LEFT, ChatMemberStatus.BANNED]
-            
-            # Cache store
-            MovieBotUtils._fsub_check_cache[cache_key] = (datetime.datetime.now(), result)
-            
-            # Clean cache if too big
-            if len(MovieBotUtils._fsub_check_cache) > 1000:
-                MovieBotUtils.clean_cache()
-            
-            return result
-            
+            return member.status not in [ChatMemberStatus.LEFT, ChatMemberStatus.BANNED]
         except UserNotParticipant:
-            MovieBotUtils._fsub_check_cache[cache_key] = (datetime.datetime.now(), False)
             return False
-        except Exception as e:
-            print(f"FSUB Check Error: {e}")
+        except:
             return False
     
     # --- 12. PROGRESS BAR ---
@@ -483,7 +456,7 @@ class MovieBotUtils:
         percent = int(current * 100 / total)
         return f"{bar} {percent}%"
     
-    # --- 13. CLEAN CACHE (✅ UPDATED) ---
+    # --- 13. CLEAN CACHE ---
     @staticmethod
     def clean_cache():
         now = datetime.datetime.now()
@@ -503,68 +476,3 @@ class MovieBotUtils:
                 expired.append(key)
         for key in expired:
             del MovieBotUtils._ai_cache[key]
-        
-        # FSUB cache
-        expired = []
-        for key, (cache_time, _) in MovieBotUtils._fsub_check_cache.items():
-            if (now - cache_time).seconds > 300:
-                expired.append(key)
-        for key in expired:
-            del MovieBotUtils._fsub_check_cache[key]
-    
-    # --- 14. RANDOM MOVIE ---
-    @staticmethod
-    async def get_random_movie():
-        """Random movie for MOTD"""
-        movies = [
-            "Inception", "The Dark Knight", "Interstellar", "3 Idiots", 
-            "Dangal", "KGF", "RRR", "Jawan", "Pathaan", "Animal",
-            "Avengers Endgame", "Titanic", "The Matrix", "Shawshank Redemption"
-        ]
-        movie = random.choice(movies)
-        
-        # Try OMDb
-        info = await MovieBotUtils.get_omdb_info(movie)
-        if "not found" not in info.lower():
-            return {
-                "title": movie,
-                "year": "N/A",
-                "genre": "N/A",
-                "rating": "N/A"
-            }
-        return None
-    
-    # --- 15. FORCE SUBSCRIBE VERIFICATION (✅ NAYA) ---
-    @staticmethod
-    async def verify_and_unmute(client, chat_id, user_id, channel_id):
-        """Verify karo aur unmute karo agar channel joined hai"""
-        is_joined = await MovieBotUtils.check_fsub_member(client, channel_id, user_id)
-        
-        if is_joined:
-            try:
-                # Database mein mark karo
-                await add_fsub_verified(chat_id, user_id)
-                
-                # Unmute
-                await client.restrict_chat_member(
-                    chat_id, user_id,
-                    ChatPermissions(
-                        can_send_messages=True,
-                        can_send_media_messages=True,
-                        can_send_other_messages=True,
-                        can_add_web_page_previews=True
-                    )
-                )
-                return True
-            except Exception as e:
-                print(f"Unmute Error: {e}")
-        return False
-    
-    # --- 16. FORCE SUBSCRIBE MESSAGE (✅ NAYA) ---
-    @staticmethod
-    def get_fsub_message(settings, user_name, channel_title, channel_link):
-        """Custom force subscribe message"""
-        msg_template = settings.get("fsub_welcome_msg", 
-            "🔒 **Group Locked!**\n\nHello {name}! 👋\n\nIs group mein message karne ke liye pehle hamara **channel join karna hoga**:\n\n📢 **{channel}**\n\n✅ Channel join karo\n✅ \"I've Joined\" button dabao\n✅ Phir message kar sakoge\n\n_Join karne ke baad auto-unmute ho jaoge!_ 🎉")
-        
-        return msg_template.replace("{name}", user_name).replace("{channel}", channel_title)
