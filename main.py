@@ -97,24 +97,24 @@ def run_health_server():
 
 async def run_bot():
     try:
-        from bot import app
+        # Import startup_tasks manually
+        from bot import app, startup_tasks
         
         logger.info("🚀 Starting Movie Helper Bot...")
         
         await app.start()
+        
+        # Manually run startup tasks here
+        logger.info("⚙️ Running startup tasks...")
+        await startup_tasks()
         
         bot_info = await app.get_me()
         logger.info(f"✅ Bot started as @{bot_info.username}")
         
         logger.info("🤖 Bot is now running and ready!")
         
-        try:
-            while True:
-                await asyncio.sleep(3600)
-        except KeyboardInterrupt:
-            logger.info("⏹️ Bot stopping...")
-            await app.stop()
-            sys.exit(0)
+        # Keep bot running
+        await asyncio.Event().wait()
         
     except Exception as e:
         logger.error(f"❌ Bot crashed: {e}")
