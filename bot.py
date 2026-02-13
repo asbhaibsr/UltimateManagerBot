@@ -102,7 +102,6 @@ async def safe_send_message(chat_id: int, text: str, **kwargs):
         return None
 
 # ================ INIT DATABASE ================
-@app.on_startup()
 async def startup_tasks():
     """Run on bot startup"""
     logger.info("Running startup tasks...")
