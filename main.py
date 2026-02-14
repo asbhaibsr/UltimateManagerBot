@@ -6,6 +6,7 @@ import time
 from threading import Thread
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
+# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -13,6 +14,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class HealthHandler(BaseHTTPRequestHandler):
+    """Simple HTTP server for health checks"""
     def do_GET(self):
         if self.path in ['/health', '/', '/ping']:
             self.send_response(200)
@@ -22,61 +24,59 @@ class HealthHandler(BaseHTTPRequestHandler):
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Movie Helper Bot - Running</title>
+                <title>Movie Helper Bot - Status</title>
                 <style>
                     body {{
-                        font-family: 'Segoe UI', Arial, sans-serif;
+                        font-family: Arial, sans-serif;
                         text-align: center;
-                        padding: 40px;
+                        padding: 50px;
                         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                         color: white;
                     }}
                     .container {{
                         background: rgba(255,255,255,0.1);
                         padding: 30px;
-                        border-radius: 20px;
-                        max-width: 700px;
-                        margin: 0 auto;
+                        border-radius: 15px;
                         backdrop-filter: blur(10px);
+                        max-width: 600px;
+                        margin: 0 auto;
                     }}
-                    h1 {{ font-size: 2.5em; margin-bottom: 10px; }}
+                    h1 {{
+                        font-size: 2.5em;
+                        margin-bottom: 10px;
+                    }}
                     .status {{
-                        background: #00b894;
+                        background: green;
                         color: white;
-                        padding: 12px 25px;
-                        border-radius: 30px;
+                        padding: 10px 20px;
+                        border-radius: 25px;
                         display: inline-block;
                         margin: 20px 0;
-                        font-weight: bold;
+                        font-size: 1.2em;
                     }}
                     .info {{
                         text-align: left;
-                        margin-top: 25px;
+                        margin-top: 20px;
                         background: rgba(255,255,255,0.1);
-                        padding: 20px;
-                        border-radius: 15px;
+                        padding: 15px;
+                        border-radius: 10px;
                     }}
-                    .emoji {{ font-size: 1.2em; }}
                 </style>
             </head>
             <body>
                 <div class="container">
                     <h1>🎬 Movie Helper Bot</h1>
                     <div class="status">✅ Bot is Running</div>
-                    <p>Group management aur movie requests ke liye advanced bot!</p>
+                    <p>This bot helps with movie recommendations, spelling correction, and more!</p>
                     
                     <div class="info">
                         <h3>📊 Server Status:</h3>
-                        <p>• <strong>Service:</strong> Movie Helper Bot</p>
-                        <p>• <strong>Status:</strong> Active & Healthy</p>
-                        <p>• <strong>Version:</strong> 2.0 (Advanced)</p>
-                        <p>• <strong>Last Check:</strong> {time.strftime('%Y-%m-%d %H:%M:%S')}</p>
-                        <p>• <strong>Uptime:</strong> Continuous</p>
+                        <p>• Service: <strong>Movie Helper Bot</strong></p>
+                        <p>• Status: <strong>Active & Healthy</strong></p>
+                        <p>• Platform: <strong>Koyeb Cloud</strong></p>
+                        <p>• Health Check: <strong>Passing</strong></p>
+                        <p>• Last Check: {time.strftime('%Y-%m-%d %H:%M:%S')}</p>
                     </div>
-                    
-                    <p style="margin-top: 30px; font-size: 0.9em;">
-                        Made with ❤️ for Telegram Groups
-                    </p>
                 </div>
             </body>
             </html>
@@ -87,32 +87,75 @@ class HealthHandler(BaseHTTPRequestHandler):
             self.end_headers()
     
     def log_message(self, format, *args):
+        # Disable default logging
         pass
 
 def run_health_server():
+    """Run simple HTTP server for health checks"""
     port = int(os.getenv("PORT", "8080"))
     server = HTTPServer(('0.0.0.0', port), HealthHandler)
-    logger.info(f"✅ Health check server running on port {port}")
+    logger.info(f"✅ Health check server started on port {port}")
     server.serve_forever()
 
 async def run_bot():
+    """Run Telegram bot"""
     try:
+        # Import bot after health server is started
         from bot import app
         
         logger.info("🚀 Starting Movie Helper Bot...")
         
+        # Start the bot
         await app.start()
         
+        # Get bot info
         bot_info = await app.get_me()
         logger.info(f"✅ Bot started as @{bot_info.username}")
         
-        logger.info("🤖 Bot is now running and ready!")
+        # Set bot commands
+        try:
+            from pyrogram.types import BotCommand
+            
+            commands = [
+                BotCommand("start", "Start the bot"),
+                BotCommand("help", "Get help"),
+                BotCommand("settings", "Group settings"),
+                BotCommand("stats", "Bot statistics"),
+                BotCommand("ai", "Ask AI about movies"),
+                BotCommand("addfsub", "Set force subscribe"),
+                BotCommand("ping", "Check bot status"),
+                BotCommand("id", "Get user/group ID")
+            ]
+            
+            await app.set_bot_commands(commands)
+            logger.info("✅ Bot commands set successfully")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not set bot commands: {e}")
         
+        # Send startup message to owner
+        try:
+            from config import Config
+            await app.send_message(
+                Config.OWNER_ID,
+                f"🤖 Bot Started Successfully!\n\n"
+                f"• Bot: @{bot_info.username}\n"
+                f"• Time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"• Server: Koyeb Cloud\n"
+                f"• Status: ✅ Running\n\n"
+                f"Health check: http://0.0.0.0:8080/health"
+            )
+        except:
+            pass
+        
+        logger.info("🤖 Bot is now running and ready to receive messages...")
+        logger.info("📡 Waiting for messages...")
+        
+        # Keep bot running forever - SIMPLE VERSION WITHOUT IDLE
         try:
             while True:
-                await asyncio.sleep(3600)
+                await asyncio.sleep(3600)  # Sleep for 1 hour
         except KeyboardInterrupt:
-            logger.info("⏹️ Bot stopping...")
+            logger.info("⏹️ Bot stopped by user")
             await app.stop()
             sys.exit(0)
         
@@ -123,11 +166,15 @@ async def run_bot():
         sys.exit(1)
 
 def main():
+    """Main function to run both health server and bot"""
+    # Start health server in separate thread
     health_thread = Thread(target=run_health_server, daemon=True)
     health_thread.start()
     
-    time.sleep(2)
+    logger.info("⏳ Waiting 3 seconds for health server to start...")
+    time.sleep(3)
     
+    # Run Telegram bot
     asyncio.run(run_bot())
 
 if __name__ == "__main__":
