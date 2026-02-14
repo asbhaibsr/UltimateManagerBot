@@ -1,424 +1,225 @@
-# utils.py - Movie Helper Bot Utilities File
-# Updated with Welcome Image, OMDb Data, Admin Mentions, and Daily Limit System
-
 import re
 import aiohttp
 import asyncio
 import g4f
-import random
-import datetime
-import io
-import time
+import difflib
 from config import Config
+from typing import Optional
 from urllib.parse import quote
-from PIL import Image, ImageDraw, ImageFont
+# Ye line add ki gayi hai error fix karne ke liye:
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram.enums import ChatMemberStatus
-from pyrogram.errors import UserNotParticipant
-from database import get_spelling_cache, set_spelling_cache
-
 
 class MovieBotUtils:
-    """
-    Movie Helper Bot - Utils Class
-    All advanced functions with Indian style messages
-    """
     
-    # --- CACHE SYSTEM ---
-    _google_cache = {}
-    _movie_cache = {}
-    _ai_cache = {}
-    
-    # --- 1. BIO PROTECTION (SMARTDEV LOGIC) ---
+    # --- MOVIE/SERIES FORMAT VALIDATION (UPDATED) ---
     @staticmethod
-    def check_bio_safety_deep(bio: str) -> dict:
-        """Bio scan - links, username, promotion detect karega"""
-        if not bio:
-            return {"safe": True, "issues": [], "score": 100}
-        
-        bio_lower = bio.lower()
-        issues = []
-        score = 100
-        
-        # Link patterns
-        link_patterns = [
-            r'https?://\S+', r'www\.\S+', r't\.me/\S+', r'telegram\.me/\S+',
-            r'\.com\b', r'\.in\b', r'\.net\b', r'\.org\b',
-            r'bit\.ly/\S+', r'tinyurl\.com/\S+'
-        ]
-        
-        for pattern in link_patterns:
-            if re.search(pattern, bio_lower):
-                issues.append("🔗 Link")
-                score -= 30
-                break
-        
-        # Username
-        if re.search(r'@[\w_]+', bio_lower):
-            issues.append("📛 Username")
-            score -= 25
-        
-        # Promotion words
-        promo_words = ['join', 'subscribe', 'follow', 'channel', 'group', 'free']
-        for word in promo_words:
-            if re.search(r'\b' + word + r'\b', bio_lower):
-                issues.append("📢 Promotion")
-                score -= 15
-                break
-        
-        return {
-            "safe": score >= 70,
-            "issues": issues,
-            "score": score,
-            "message": MovieBotUtils._get_bio_message(issues, score)
-        }
-    
-    @staticmethod
-    def _get_bio_message(issues, score):
-        """Bio warning message in Hinglish"""
-        if score >= 70:
-            return "✅ Bio safe hai, koi problem nahi!"
-        
-        issues_text = ", ".join(issues) if issues else "Link/Username"
-        
-        if score < 40:
-            return f"🚨 **DANGER!** Bio mein `{issues_text}` mila. Bahut risky hai!"
-        else:
-            return f"⚠️ **Warning:** Bio mein `{issues_text}` hai. Please hatao warna action hoga!"
-    
-    # --- 2. ADVANCED WELCOME IMAGE (UPDATED) ---
-    @staticmethod
-    async def create_welcome_image(user_name, user_id, profile_pic_bytes, group_name):
-        """Tumhara Custom Dark Design - Welcome Image with DP and Details"""
-        try:
-            def make_image():
-                # --- 1. Canvas Setup ---
-                W, H = 800, 400
-                background_color = (15, 15, 25) 
-                background = Image.new('RGB', (W, H), color=background_color)
-                draw = ImageDraw.Draw(background)
-
-                # --- 2. Watermark ---
-                watermark_layer = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-                draw_watermark = ImageDraw.Draw(watermark_layer)
-                big_text = "Asbhaibsr Bots"
-                
-                try:
-                    font_big = ImageFont.truetype("arial.ttf", 110) 
-                except:
-                    font_big = ImageFont.load_default()
-
-                bbox = draw_watermark.textbbox((0, 0), big_text, font=font_big)
-                text_width = bbox[2] - bbox[0]
-                text_height = bbox[3] - bbox[1]
-                x_pos = (W - text_width) // 2
-                y_pos = (H - text_height) // 2
-                
-                draw_watermark.text((x_pos, y_pos), big_text, fill=(45, 45, 60, 150), font=font_big)
-                watermark_layer = watermark_layer.rotate(10, resample=Image.BICUBIC, center=(W//2, H//2))
-                background.paste(watermark_layer, (0, 0), watermark_layer)
-
-                # --- 3. User PFP ---
-                pfp_size = 200
-                if profile_pic_bytes:
-                    try:
-                        pfp = Image.open(io.BytesIO(profile_pic_bytes)).convert("RGBA").resize((pfp_size, pfp_size))
-                        mask = Image.new('L', (pfp_size, pfp_size), 0)
-                        draw_mask = ImageDraw.Draw(mask)
-                        draw_mask.ellipse((0, 0, pfp_size, pfp_size), fill=255)
-                        
-                        # White Border
-                        border_size = 210
-                        border_pos = 45
-                        draw.ellipse((border_pos, border_pos, border_pos + border_size, border_pos + border_size), fill=(255, 255, 255))
-                        background.paste(pfp, (50, 50), mask)
-                    except:
-                        draw.ellipse((50, 50, 250, 250), fill=(100, 100, 100))
-                else:
-                    draw.ellipse((50, 50, 250, 250), fill=(100, 100, 100))
-
-                # --- 4. Text Details ---
-                try:
-                    font_header = ImageFont.truetype("arial.ttf", 50)
-                    font_sub = ImageFont.truetype("arial.ttf", 35)
-                except:
-                    font_header = ImageFont.load_default()
-                    font_sub = ImageFont.load_default()
-
-                start_x = 300 
-                draw.text((start_x, 60), f"🤖 {Config.BOT_USERNAME}", fill="#FFD700", font=font_header)
-                draw.text((start_x, 130), f"📢 Group: {group_name[:15]}..", fill="#00FFFF", font=font_sub)
-                draw.text((start_x, 180), f"👤 Name: {user_name[:20]}", fill="white", font=font_sub)
-                draw.text((start_x, 230), f"🆔 ID: {user_id}", fill="#90EE90", font=font_sub)
-
-                output = io.BytesIO()
-                background.save(output, format="PNG")
-                output.seek(0)
-                return output
-
-            # Async Run
-            return await asyncio.get_event_loop().run_in_executor(None, make_image)
-            
-        except Exception as e:
-            print(f"Image Error: {e}")
-            return None
-    
-    # --- 3. ADMIN MENTIONS (LIVE FETCH - PROPER TAGGING) ---
-    @staticmethod
-    async def get_admin_mentions(client, chat_id):
-        """Live admin fetch with proper tg://user?id= tagging"""
-        mentions = []
-        
-        try:
-            async for member in client.get_chat_members(chat_id, filter=ChatMemberStatus.ADMINISTRATOR):
-                if not member.user.is_bot:
-                    # Proper tag format - ALWAYS WORKS
-                    mentions.append(f"<a href='tg://user?id={member.user.id}'>👮 {member.user.first_name}</a>")
-            
-            if not mentions:
-                return "👮 Admins"
-            
-            return ", ".join(mentions[:5])
-            
-        except Exception as e:
-            print(f"Admin fetch error: {e}")
-            return "👮 Admins"
-    
-    # --- 4. MOVIE FORMAT VALIDATION (BEST) ---
-    @staticmethod
-    def validate_movie_format_advanced(text: str) -> dict:
-        """Movie name clean karo, junk words hatao, format do"""
+    def validate_movie_format(text: str) -> dict:
         text_lower = text.lower().strip()
-        original = text
         
-        # Season/Episode detect
-        session_patterns = [
-            (r'season\s*(\d+)', 'S{:02d}'),
-            (r's(\d{1,2})', 'S{:02d}'),
-            (r'episode\s*(\d+)', 'E{:02d}'),
-            (r'ep\s*(\d+)', 'E{:02d}'),
-            (r'e(\d{1,2})', 'E{:02d}')
+        # 1. Junk words ki list define karo
+        junk_words_list = [
+            "dedo", "chahiye", "chaiye", "season", "bhejo", "send", "kardo", "karo", "do",
+            "plz", "pls", "please", "request", "mujhe", "mereko", "koi", "link", 
+            "download", "movie", "film", "series", "full", "hd", "480p", "720p", "1080p", 
+            "webseries", "episode", "dubbed", "episod", "movies", "dena", "admin", "yaar",
+            "upload", "uploded", "zaldi", "seassion", "post", "watch"
         ]
         
-        session_info = ""
-        clean_text = text_lower
-        
-        for pattern, fmt in session_patterns:
-            match = re.search(pattern, text_lower)
-            if match:
-                num = int(match.group(1))
-                session_info = fmt.format(num)
-                clean_text = re.sub(pattern, '', clean_text).strip()
-                break
-        
-        # Language detect
-        languages = {
-            'hindi': '🎬 Hindi', 'english': '🎬 English', 'tamil': '🎬 Tamil',
-            'telugu': '🎬 Telugu', 'malayalam': '🎬 Malayalam', 'kannada': '🎬 Kannada',
-            'punjabi': '🎬 Punjabi', 'bengali': '🎬 Bengali'
-        }
-        
-        detected_lang = ""
-        for lang, display in languages.items():
-            if lang in clean_text:
-                detected_lang = display
-                clean_text = clean_text.replace(lang, '').strip()
-                break
-        
-        # Junk words
-        junk_words = [
-            "dedo", "chahiye", "chaiye", "bhejo", "send", "kardo", "karo", "do",
-            "plz", "pls", "please", "request", "mujhe", "mereko", "koi", "link",
-            "download", "movie", "film", "series", "full", "hd", "720p", "1080p",
-            "dubbed", "dual", "audio", "bro", "bhai", "sir", "admin", "yaar"
-        ]
-        
+        # 2. Check karo user ne kon se junk words use kiye
         found_junk = []
-        words = clean_text.split()
-        clean_words = []
+        words = text_lower.split()
         
+        # Language detect (Simple logic)
+        languages = {'hindi', 'english', 'tamil', 'telugu', 'malayalam', 'kannada', 'marathi'}
+        detected_lang = ""
+        
+        # Clean Text Generation
+        clean_words = []
         for word in words:
+            # Punctuation htao check karne ke liye
             clean_w = re.sub(r'[^\w]', '', word)
-            if clean_w in junk_words:
+            
+            if clean_w in junk_words_list:
                 if clean_w not in found_junk:
                     found_junk.append(clean_w)
-            elif len(clean_w) >= 2 or clean_w.isdigit():
+            elif clean_w in languages:
+                detected_lang = clean_w.title()
+            else:
                 clean_words.append(word)
+                
+        clean_text = " ".join(clean_words).title()
         
-        movie_name = " ".join(clean_words).strip()
-        if not movie_name:
-            movie_name = original[:30]
-        
-        # Format
-        correct_format = movie_name.title()
-        if session_info:
-            correct_format += f" {session_info}"
+        # Format banao
         if detected_lang:
-            correct_format += f" {detected_lang}"
-        
+            correct_format = f"{clean_text} [{detected_lang}]"
+        else:
+            correct_format = clean_text
+
+        # Return dict me 'found_junk' add kiya hai
         return {
-            'is_valid': len(found_junk) == 0,
-            'found_junk': found_junk,
-            'clean_name': movie_name,
+            'is_valid': len(found_junk) == 0, # Agar junk mila to invalid
+            'found_junk': found_junk,         # Ye list bot use karega message me
+            'clean_name': clean_text,
             'correct_format': correct_format,
-            'session_info': session_info,
-            'language': detected_lang
+            'search_query': clean_text.replace(" ", "+")
         }
     
-    # --- 5. OMDb MOVIE INFO (DATA MODE) ---
+    # --- CREATE FORMATTED MESSAGE ---
     @staticmethod
-    async def get_omdb_info(movie_name: str):
-        """OMDb se data lao dict format mein - NOT TEXT"""
-        if not Config.OMDB_API_KEY:
-            return None
+    def create_format_message(user_name: str, original_text: str, validation_result: dict, group_username: str = "") -> tuple:
+        """Returns (message_text, keyboard_markup)"""
         
-        try:
-            url = f"http://www.omdbapi.com/?t={quote(movie_name)}&apikey={Config.OMDB_API_KEY}"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=5) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        if data.get("Response") == "True":
-                            return {
-                                "found": True,
-                                "title": data.get("Title", "N/A"),
-                                "year": data.get("Year", "N/A"),
-                                "rating": data.get("imdbRating", "N/A"),
-                                "genre": data.get("Genre", "N/A"),
-                                "plot": data.get("Plot", "N/A")[:150],
-                                "poster": data.get("Poster", None)
-                            }
-        except Exception as e:
-            print(f"OMDb Error: {e}")
-            pass
-        return {"found": False}
-    
-    # --- 6. GOOGLE SEARCH ---
-    @staticmethod
-    async def get_google_search(query: str):
-        """Google search with fallback"""
-        cache_key = f"google_{query.lower()}"
+        # Create main message
+        lines = [
+            "╔══════════════════╗",
+            "✨ **FORMAT CORRECTION** ✨",
+            "╚══════════════════╝",
+            "",
+            f"👤 **User:** {user_name}",
+            f"❌ **Wrong Format:** `{original_text}`",
+            f"✅ **Correct Format:** {validation_result['correct_format']}",
+            "",
+            "📌 **Format Rules:**",
+            "• Movie: **Movie Name (Year) [Language]**",
+            "• Series: **Series Name S01 E01 (Year) [Language]**",
+            "",
+            "🔍 **Examples:**",
+            "• `kalki 2024 hindi` → **Kalki (2024) [Hindi]**",
+            "• `stranger things s01 e01` → **Stranger Things S01 E01**",
+            ""
+        ]
         
-        # Cache check
-        if cache_key in MovieBotUtils._google_cache:
-            cache_time, results = MovieBotUtils._google_cache[cache_key]
-            if (datetime.datetime.now() - cache_time).seconds < 600:
-                return results
+        message_text = "\n".join(lines)
         
-        # Try multiple sources
-        results = await MovieBotUtils._search_duckduckgo(query)
-        
-        if results:
-            MovieBotUtils._google_cache[cache_key] = (datetime.datetime.now(), results)
-            return results
-        
-        return []
-    
-    @staticmethod
-    async def _search_duckduckgo(query):
-        try:
-            url = f"https://html.duckduckgo.com/html/?q={quote(query)}"
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        # Create search button with proper link
+        if group_username:
+            # Remove @ if present
+            group_name = group_username.replace('@', '')
+            search_query = validation_result['search_query']
+            search_url = f"https://t.me/{group_name}?start={search_query}"
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, timeout=8) as resp:
-                    if resp.status == 200:
-                        text = await resp.text()
-                        results = re.findall(r'<a rel="nofollow" class="result__a" href="([^"]+)">([^<]+)</a>', text)
-                        
-                        formatted = []
-                        for href, title in results[:5]:
-                            title = title.replace('&amp;', '&').replace('&quot;', '"')
-                            formatted.append((href, title))
-                        return formatted
-        except:
-            return None
+            buttons = [
+                [InlineKeyboardButton("🔍 Search Again", url=search_url)],
+                [InlineKeyboardButton("📋 Copy Format", callback_data=f"copy_{validation_result['clean_name']}")]
+            ]
+        else:
+            buttons = [
+                [InlineKeyboardButton("📋 Copy Format", callback_data=f"copy_{validation_result['clean_name']}")]
+            ]
+        
+        return message_text, InlineKeyboardMarkup(buttons)
     
-    # --- 7. AI RESPONSE ---
+    # --- AI RESPONSE (UPDATED) ---
     @staticmethod
-    async def get_ai_response(query: str) -> str:
-        """AI se Hinglish mein reply"""
-        cache_key = f"ai_{query.lower()}"
-        
-        # Cache check
-        if cache_key in MovieBotUtils._ai_cache:
-            cache_time, response = MovieBotUtils._ai_cache[cache_key]
-            if (datetime.datetime.now() - cache_time).seconds < 300:
-                return response
-        
+    async def get_ai_response(query: str, context: str = "") -> str:
+        """Get AI response with better handling"""
         try:
-            prompt = f"""User ne pucha: '{query}'. 
-            Tum ek friendly Indian movie expert ho.
-            Hinglish mein jawab do, emojis use karo.
-            Short aur simple rakho, max 3-4 lines.
-            Helpful bano, agar pata nahi toh bolo 'sorry yaar yeh nahi pata'."""
+            # Check if server is busy
+            import random
+            if random.random() < 0.1:  # 10% chance of simulated busy
+                return "🤖 **AI Server Busy**\n\nPlease try again in a few moments! ⏳"
+            
+            movie_keywords = ["movie", "film", "series", "web series", "show", "episode", 
+                            "imdb", "rating", "cast", "director", "review", "download",
+                            "watch", "stream", "ott", "netflix", "amazon", "hotstar"]
+            
+            is_movie_query = any(keyword in query.lower() for keyword in movie_keywords)
+            
+            if is_movie_query:
+                prompt = f"""User is asking about: '{query}'. 
+                Provide Movie/Series Name, Year, Rating, Genre and a short review in Hinglish with emojis.
+                Keep it under 150 words."""
+            else:
+                prompt = f"""User says: '{query}'. 
+                Reply as a helpful assistant in Hinglish with emojis.
+                Keep it friendly and under 100 words."""
+            
+            # Add context if available
+            if context:
+                prompt = f"Context: {context}\n\n{prompt}"
             
             response = await g4f.ChatCompletion.create_async(
                 model=Config.G4F_MODEL,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=10
+                timeout=30
             )
             
-            if response and response.strip():
-                formatted = f"🤖 **BOT:**\n\n{response.strip()}"
-                MovieBotUtils._ai_cache[cache_key] = (datetime.datetime.now(), formatted)
-                return formatted
+            if not response.strip():
+                if is_movie_query:
+                    return "🎬 **Movie Information**\n\nSorry, couldn't fetch details right now. Please try the official IMDB website for accurate information! 📡"
+                else:
+                    return "🤖 **AI Response**\n\nHmm, let me think... Actually, why don't you ask me about movies? I'm great at that! 🍿"
+            
+            # Format response nicely
+            formatted_response = f"🤖 **AI Response**\n\n{response.strip()}\n\n✨ *Powered by Movie Helper Bot*"
+            return formatted_response
             
         except Exception as e:
             print(f"AI Error: {e}")
-        
-        return (
-            "🤖 **BOT:**\n\n"
-            "Arey yaar, abhi thoda busy hoon! ⏳\n"
-            "2 minute baad try karo, phir baat karte hain! 😊"
-        )
+            return "🤖 **AI Server Busy**\n\nOur AI is currently processing many requests. Please try again in a few minutes! ⏳"
     
-    # --- 8. ANIME SEARCH ---
+    # --- OMDb INFO ---
     @staticmethod
-    async def get_anime_info(query: str):
+    async def get_omdb_info(movie_name: str) -> str:
+        """Get movie info using OMDb"""
         try:
-            url = f"https://api.jikan.moe/v4/anime?q={quote(query)}&limit=1"
+            url = f"http://www.omdbapi.com/?t={quote(movie_name)}&apikey={Config.OMDB_API_KEY}"
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=8) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        
-                        if data.get('data') and len(data['data']) > 0:
-                            anime = data['data'][0]
-                            synopsis = anime.get('synopsis', 'No synopsis.')
-                            if len(synopsis) > 100:
-                                synopsis = synopsis[:100] + "..."
-                            
-                            return {
-                                "title": anime['title'],
-                                "score": anime.get('score', 'N/A'),
-                                "episodes": anime.get('episodes', 'Unknown'),
-                                "url": anime['url'],
-                                "synopsis": synopsis
-                            }
+                async with session.get(url, timeout=10) as resp:
+                    data = await resp.json()
+            
+            if data.get("Response") == "True":
+                title = data.get("Title", "N/A")
+                year = data.get("Year", "N/A")
+                rating = data.get("imdbRating", "N/A")
+                genre = data.get("Genre", "N/A")
+                plot = data.get("Plot", "N/A")[:150]
+                
+                response_lines = [
+                    "🎬 **Movie Information** 🎬",
+                    "",
+                    f"📝 **Title:** {title}",
+                    f"📅 **Year:** {year}",
+                    f"⭐ **Rating:** {rating}/10",
+                    f"🎭 **Genre:** {genre}",
+                    f"📖 **Plot:** {plot}...",
+                    "",
+                    f"🔗 **IMDb:** https://www.imdb.com/title/{data.get('imdbID', '')}/",
+                    "",
+                    "_Enjoy watching! 🍿_"
+                ]
+                
+                return "\n".join(response_lines)
+            return "❌ **Movie Not Found**\n\nSorry, couldn't find details for this movie on IMDb."
         except:
-            pass
-        return None
+            return "❌ **IMDb Service Unavailable**\n\nPlease check the movie name and try again later."
     
-    # --- 9. MESSAGE QUALITY CHECK ---
+    # --- MESSAGE QUALITY CHECK (UPDATED) ---
     @staticmethod
     def check_message_quality(text: str) -> str:
-        """Link/Abuse detect karo"""
+        """
+        Returns: 'CLEAN', 'JUNK', 'LINK', 'ABUSE', or 'IGNORE'
+        """
         text_lower = text.lower().strip()
         
-        # Links
+        # A. 🔗 LINK DETECTION
         link_patterns = [
-            r't\.me/', r'http://', r'https://', r'www\.',
-            r'\.com\b', r'\.in\b', r'\.net\b', r'\.org\b'
+            r't\.me/', r'telegram\.me/', r'http://', r'https://', 
+            r'www\.', r'\.com', r'\.in', r'\.net', r'\.org', r'\.io',
+            r'joinchat', r'bit\.ly', r'tinyurl', r'goo\.gl', r'shorturl'
         ]
         for pattern in link_patterns:
             if re.search(pattern, text_lower):
                 return "LINK"
         
-        # Abuse words
+        # B. 🤬 ABUSE WORDS
         abuse_words = [
-            "mc", "bc", "bkl", "mkl", "chutiya", "kutta", "fuck", "bitch",
-            "gand", "lund", "madarchod", "behenchod", "bsdk", "gandu"
+            "mc", "bc", "bkl", "mkl", "chutiya", "kutta", "kamina", "fuck", 
+            "bitch", "sex", "porn", "randi", "gand", "lund", "bhosda", 
+            "madarchod", "behenchod", "harami", "ullu", "gadha", "bewakuf",
+            "idiot", "stupid", "moron", "lauda", "chut", "gaand", "bsdk",
+            "bhadwa", "chodu", "gandu", "lavde", "rand", "kutti", "kamina",
+            "gandu", "motherfucker", "asshole", "bastard", "bloody", "damn"
         ]
         
         words = text_lower.split()
@@ -426,53 +227,109 @@ class MovieBotUtils:
             if word in words:
                 return "ABUSE"
         
-        return "CLEAN"
+        # C. 🚫 JUNK WORDS
+        junk_words = [
+            "dedo", "chahiye", "chaiye", "mangta", "bhej", "send", "kardo", 
+            "karo", "do", "plz", "pls", "please", "request", "link", "download", 
+            "downlod", "movie", "film", "series", "season", "episode", "hd", 
+            "480p", "720p", "1080p", "bhai", "bro", "sir", "admin", "yaar", 
+            "hello", "hi", "hey", "lunch", "dinner", "mujhe", "mereko", "koi",
+            "full", "complete", "part", "version", "print", "quality", "bluray",
+            "webdl", "torrent", "magnet", "subtitle", "dual", "audio", "dubbed"
+        ]
+        
+        for word in junk_words:
+            if word in words:
+                for w in words:
+                    clean_w = w.strip('.,!?;:')
+                    if clean_w == word:
+                        return "JUNK"
+        
+        # D. ✅ CLEAN FORMAT
+        clean_pattern = r'^[a-zA-Z0-9\s\-\:\'\&]+(?:\s\d{4})?(?:\s?[Ss]\d{1,2})?(?:\s?[Ee]\d{1,2})?$'
+        if re.match(clean_pattern, text, re.IGNORECASE):
+            return "CLEAN"
+        
+        return "IGNORE"
     
-    # --- 10. AUTO DELETE ---
+    # --- SPELLING SUGGESTION ---
     @staticmethod
-    async def auto_delete_message(client, message, delay=30):
+    def get_spelling_suggestion(user_text: str, movie_list: list) -> Optional[str]:
+        """Suggest correct spelling"""
+        matches = difflib.get_close_matches(user_text, movie_list, n=1, cutoff=0.5)
+        if matches:
+            return matches[0]
+        return None
+    
+    # --- EXTRACT CLEAN NAME ---
+    @staticmethod
+    def extract_movie_name(text: str) -> str:
+        """Extract clean movie/series name"""
+        text = text.lower()
+        
+        # Remove common words
+        remove_words = [
+            "download", "movie", "film", "series", "link", "dedo", "chahiye", 
+            "plz", "pls", "bhai", "season", "episode", "full", "hd", "hindi", 
+            "english", "dual", "dubbed", "request", "send", "give", "me", 
+            "please", "want", "need", "looking", "for", "ka", "ki", "ke"
+        ]
+        
+        for word in remove_words:
+            text = text.replace(word, "")
+        
+        # Clean up
+        text = re.sub(r'[^\w\s]', '', text)
+        text = ' '.join(text.split())
+        
+        if len(text) > 1:
+            return text.title()
+        return ""
+    
+    # --- SYSTEM UTILS ---
+    @staticmethod
+    async def auto_delete_message(client, message, delay: int = Config.AUTO_DELETE_TIME):
         await asyncio.sleep(delay)
         try:
-            await message.delete()
+            await client.delete_messages(message.chat.id, message.id)
         except:
             pass
     
-    # --- 11. CHECK FSUB MEMBER ---
     @staticmethod
-    async def check_fsub_member(client, channel_id, user_id):
-        try:
-            member = await client.get_chat_member(channel_id, user_id)
-            return member.status not in [ChatMemberStatus.LEFT, ChatMemberStatus.BANNED]
-        except UserNotParticipant:
-            return False
-        except:
-            return False
+    async def broadcast_messages(client, chat_ids, message_text, delay: float = Config.BROADCAST_DELAY):
+        success = 0
+        failed = 0
+        for chat_id in chat_ids:
+            try:
+                await client.send_message(chat_id, message_text)
+                success += 1
+                await asyncio.sleep(delay)
+            except Exception as e:
+                failed += 1
+        return success, failed
     
-    # --- 12. PROGRESS BAR ---
+    # --- MOVIE DATABASE ---
     @staticmethod
-    def get_progress_bar(current, total, length=10):
-        filled = int(current * length / total)
-        bar = "█" * filled + "░" * (length - filled)
-        percent = int(current * 100 / total)
-        return f"{bar} {percent}%"
-    
-    # --- 13. CLEAN CACHE ---
-    @staticmethod
-    def clean_cache():
-        now = datetime.datetime.now()
-        
-        # Google cache
-        expired = []
-        for key, (cache_time, _) in MovieBotUtils._google_cache.items():
-            if (now - cache_time).seconds > 600:
-                expired.append(key)
-        for key in expired:
-            del MovieBotUtils._google_cache[key]
-        
-        # AI cache
-        expired = []
-        for key, (cache_time, _) in MovieBotUtils._ai_cache.items():
-            if (now - cache_time).seconds > 300:
-                expired.append(key)
-        for key in expired:
-            del MovieBotUtils._ai_cache[key]
+    def get_movie_suggestions():
+        return [
+            "Pushpa 2 The Rule 2024",
+            "Kalki 2898 AD",
+            "Jawan 2023",
+            "Pathaan 2023",
+            "Animal 2023",
+            "Gadar 2 2023",
+            "OMG 2 2023",
+            "Mission Impossible 2023",
+            "Oppenheimer 2023",
+            "Barbie 2023",
+            "Spider-Man Across The Spider-Verse",
+            "The Kerala Story 2023",
+            "Vikram Vedha 2022",
+            "Brahmastra 2022",
+            "RRR 2022",
+            "KGF Chapter 2 2022",
+            "83 2021",
+            "Sooryavanshi 2021",
+            "Tenet 2020",
+            "Avengers Endgame 2019"
+        ]
