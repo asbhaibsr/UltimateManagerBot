@@ -1,89 +1,106 @@
 <div align="center">
 
-```
-███╗   ███╗ ██████╗ ██╗   ██╗██╗███████╗    ██╗  ██╗███████╗██╗     ██████╗ ███████╗██████╗ 
-████╗ ████║██╔═══██╗██║   ██║██║██╔════╝    ██║  ██║██╔════╝██║     ██╔══██╗██╔════╝██╔══██╗
-██╔████╔██║██║   ██║██║   ██║██║█████╗      ███████║█████╗  ██║     ██████╔╝█████╗  ██████╔╝
-██║╚██╔╝██║██║   ██║╚██╗ ██╔╝██║██╔══╝      ██╔══██║██╔══╝  ██║     ██╔═══╝ ██╔══╝  ██╔══██╗
-██║ ╚═╝ ██║╚██████╔╝ ╚████╔╝ ██║███████╗    ██║  ██║███████╗███████╗██║     ███████╗██║  ██║
-╚═╝     ╚═╝ ╚═════╝   ╚═══╝  ╚═╝╚══════╝    ╚═╝  ╚═╝╚══════╝╚══════╝╚═╝     ╚══════╝╚═╝  ╚═╝
-```
-
-<img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=700&size=22&duration=3000&pause=1000&color=00D4FF&center=true&vCenter=true&multiline=true&width=700&height=80&lines=🎬+Smart+Movie+Group+Manager+Bot;✨+Built+with+Python+%2B+Pyrogram;🚀+Deployed+on+Koyeb+Cloud" alt="Typing SVG" />
+<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=6,11,20&height=200&section=header&text=🎬%20Ultimate%20Manager%20Bot&fontSize=42&fontColor=fff&animation=twinkling&fontAlignY=38&desc=Telegram%20Movie%20Groups%20ka%20Smart%20AI%20Manager&descAlignY=58&descSize=16" width="100%"/>
 
 <br/>
 
-[![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/MovieHelper_asBot)
-[![Channel](https://img.shields.io/badge/Channel-@asbhai__bsr-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/asbhai_bsr)
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![Pyrogram](https://img.shields.io/badge/Pyrogram-2.0-00B4D8?style=for-the-badge&logo=python&logoColor=white)](https://pyrogram.org)
-[![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?style=for-the-badge&logo=mongodb&logoColor=white)](https://mongodb.com)
-[![Koyeb](https://img.shields.io/badge/Hosted-Koyeb-121212?style=for-the-badge&logo=koyeb&logoColor=white)](https://koyeb.com)
+<img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=800&size=20&duration=2500&pause=800&color=00FFD4&center=true&vCenter=true&multiline=true&width=750&height=90&lines=⚡+Spelling+Check+•+Auto+Accept+•+AI+Chat;🛡️+Link+%26+Abuse+Protection+•+Smart+Filters;🚀+Built+with+Python+%2B+Pyrogram+%2B+MongoDB" alt="Typing SVG" />
+
+<br/><br/>
+
+<a href="https://t.me/MovieHelper_asBot"><img src="https://img.shields.io/badge/🤖%20Add%20Bot%20to%20Group-%232CA5E0?style=for-the-badge&logo=telegram&logoColor=white&labelColor=0077B5" alt="Add Bot"/></a>
+&nbsp;
+<a href="https://t.me/asbhai_bsr"><img src="https://img.shields.io/badge/📢%20Join%20Channel-%232CA5E0?style=for-the-badge&logo=telegram&logoColor=white&labelColor=0077B5" alt="Channel"/></a>
+&nbsp;
+<a href="https://t.me/asbhai_bsr"><img src="https://img.shields.io/badge/💬%20Contact%20Owner-%2325D366?style=for-the-badge&logo=telegram&logoColor=white&labelColor=128C7E" alt="Contact"/></a>
+
+<br/><br/>
+
+<a href="https://github.com/asbhaibsr/UltimateManagerBot/fork"><img src="https://img.shields.io/badge/🍴%20Fork%20Repo-%23181717?style=for-the-badge&logo=github&logoColor=white" alt="Fork"/></a>
+&nbsp;
+<a href="https://github.com/asbhaibsr/UltimateManagerBot/stargazers"><img src="https://img.shields.io/github/stars/asbhaibsr/UltimateManagerBot?style=for-the-badge&logo=github&label=⭐%20Stars&color=FFD700&labelColor=1a1a2e" alt="Stars"/></a>
+&nbsp;
+<a href="https://github.com/asbhaibsr/UltimateManagerBot/issues"><img src="https://img.shields.io/github/issues/asbhaibsr/UltimateManagerBot?style=for-the-badge&label=🐛%20Issues&color=FF6B6B&labelColor=1a1a2e" alt="Issues"/></a>
+
+<br/><br/>
+
+<img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white"/>
+<img src="https://img.shields.io/badge/Pyrogram-2.0.106-00B4D8?style=flat-square&logo=python&logoColor=white"/>
+<img src="https://img.shields.io/badge/MongoDB-Atlas-47A248?style=flat-square&logo=mongodb&logoColor=white"/>
+<img src="https://img.shields.io/badge/Koyeb-Deployed-121212?style=flat-square&logo=koyeb&logoColor=white"/>
+<img src="https://img.shields.io/badge/OMDb-API-E50914?style=flat-square&logo=imdb&logoColor=white"/>
+<img src="https://img.shields.io/badge/AI-G4F-FF6B35?style=flat-square&logo=openai&logoColor=white"/>
 
 <br/>
-
-> **Movie groups ke liye ek all-in-one smart bot — spelling check karo, join requests auto-approve karo, AI se help lo.**
+<img src="https://img.shields.io/github/last-commit/asbhaibsr/UltimateManagerBot?style=flat-square&color=00FFD4&label=Last%20Update"/>
+<img src="https://img.shields.io/github/commit-activity/m/asbhaibsr/UltimateManagerBot?style=flat-square&color=00FFD4&label=Commits"/>
+<img src="https://img.shields.io/badge/Status-🟢%20Live-00C851?style=flat-square"/>
 
 </div>
 
 ---
 
-## 📸 Preview
+<div align="center">
+<img src="https://user-images.githubusercontent.com/73097560/115834477-dbab4500-a447-11eb-908a-139a6edaec5c.gif" width="100%">
+</div>
 
-```
-╔══════════════════════════════════════════════════════════╗
-║  🎬  MOVIE HELPER BOT  —  Group Manager                  ║
-╠══════════════════════════════════════════════════════════╣
-║                                                          ║
-║  User:  "pushpa movie chahiye bhai send kardo plz"       ║
-║                                                          ║
-║  Bot:   Arrey yaar! 🎬                                   ║
-║         Tune likha:  ❌ pushpa movie chahiye bhai...     ║
-║         Sahi format: ✅ Pushpa                           ║
-║         Bas naam likho, aur kuch nahi! 😄               ║
-║                                                          ║
-╚══════════════════════════════════════════════════════════╝
-```
+## 📌 Table of Contents
+
+<div align="center">
+
+| | Section | | Section |
+|--|---------|--|---------|
+| 🌟 | [Features Overview](#-features-overview) | ⚡ | [How It Works](#-how-it-works) |
+| 🚀 | [Quick Deploy](#-quick-deploy) | 🛠️ | [Setup Guide](#%EF%B8%8F-setup-guide) |
+| 📋 | [Commands List](#-commands-list) | ⚙️ | [Settings Panel](#%EF%B8%8F-settings-panel) |
+| 📂 | [Project Structure](#-project-structure) | 💎 | [Premium Plans](#-premium-plans) |
+| 💖 | [Support Developer](#-support-the-developer) | | |
+
+</div>
 
 ---
 
-## ✨ Features
+## 🌟 Features Overview
 
 <table>
 <tr>
-<td width="50%">
+<td width="50%" valign="top">
 
-### 🎯 Core Features
+### 🆓 Free Features
 
-| Feature | Status |
-|---------|--------|
-| ✏️ Smart Spelling Checker | ✅ Active |
-| 📢 Channel Auto Accept | ✅ Active |
-| 🤖 AI Chat (Hinglish) | ✅ Active |
-| 🛡️ Link Protection | ✅ Active |
-| 🤬 Abuse Filter | ✅ Active |
-| 👋 Custom Welcome | ✅ Active |
-| 🗑️ Auto Delete Files | ✅ Active |
-| 📨 Movie Request System | ✅ Active |
+```
+✅  ✏️  Smart Spelling Checker
+✅  📢  Channel Auto Accept
+✅  🤖  AI Chat (Hinglish)
+✅  🛡️  Link Protection
+✅  🤬  Abuse Word Filter
+✅  👋  Custom Welcome Message
+✅  🗑️  Auto Delete Files
+✅  📨  Movie Request System
+✅  ⚠️  Warning System (3 strikes)
+✅  🔔  Admin Tag Notifications
+✅  📊  Group Statistics
+✅  🧹  Group Cleanup Tool
+```
 
 </td>
-<td width="50%">
+<td width="50%" valign="top">
 
 ### 💎 Premium Features
 
-| Feature | Status |
-|---------|--------|
-| 🔗 Force Subscribe System | 💎 Premium |
-| 🔇 No Broadcasts | 💎 Premium |
-| ⚡ Priority Support | 💎 Premium |
-| 📊 Advanced Statistics | 💎 Premium |
+```
+💎  🔗  Force Subscribe System
+💎  🔇  No Broadcast Messages
+💎  ⚡  Priority Support
+💎  📊  Advanced Statistics
+💎  🎯  Advanced Tools
+💎  🤖  Enhanced AI Responses
+```
 
 <br/>
 
-**Plans:**
-- 1 Month → ₹100
-- 3 Months → ₹250  
-- Lifetime → ₹500
+> 💬 **Premium kharidne ke liye:**
+> [@asbhai_bsr](https://t.me/asbhai_bsr) se contact karo
 
 </td>
 </tr>
@@ -91,185 +108,288 @@
 
 ---
 
-## 🔥 How It Works
+## ⚡ How It Works
 
-### ✏️ Spelling Check — Simple Mode
-
-```
-User types:   "pushpa movie chahiye bhai"
-               ↓
-Bot detects:  Junk words → ["movie", "chahiye", "bhai"]
-               ↓
-Bot replies:  "Oye bhai! 'movie chahiye bhai' kyun?
-               Seedha naam likho → Pushpa 😄"
-               ↓
-Message auto-deleted ✓   Warning sent ✓
-```
-
-### 🧠 Spelling Check — Advanced Mode (OMDb)
+<details>
+<summary><b>✏️ Spelling Check — Simple Mode (click karke dekho)</b></summary>
+<br/>
 
 ```
-User types:   "pushpa dedo"
-               ↓
-Bot strips:   junk words → clean name: "Pushpa"
-               ↓
-OMDb API:     Fetches title, rating, poster, plot
-               ↓
-Bot replies:  🎬 Pushpa (2021)
-              ⭐ 7.6/10 ⭐⭐⭐
-              🎭 Action/Drama
-              📖 Story: A coolie from...
-              [Poster Image attached] 🖼️
+┌─────────────────────────────────────────────────────────┐
+│                                                         │
+│  👤 User:  "pushpa movie chahiye bhai send kardo plz"   │
+│                        ↓                               │
+│  🔍 Bot:   Junk words detect kiye:                      │
+│            ["movie", "chahiye", "bhai", "send", "plz"] │
+│                        ↓                               │
+│  🗑️  Message auto-delete ho gaya                        │
+│                        ↓                               │
+│  💬 Bot reply (random Hinglish):                        │
+│     "Arrey bhai! 🎬                                     │
+│      Tune likha:  ❌ pushpa movie chahiye...            │
+│      Sahi format: ✅ Pushpa                             │
+│      Bas naam likho, aur kuch nahi! 😄"                │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### 📢 Channel Auto Accept
+</details>
+
+<details>
+<summary><b>🧠 Spelling Check — Advanced Mode with OMDb Poster (click karke dekho)</b></summary>
+<br/>
 
 ```
-1. Bot ko channel mein Admin banao
-   ↓
-2. Channel se koi message bot pe forward karo
-   ↓
-3. Bot puchega → "Add karna hai?" [✅ Haan] [❌ Nahi]
-   ↓
-4. /mychannels se manage karo
-   → [🟢 Connect] [🔴 Disconnect] [🗑️ Remove]
-   ↓
-5. Ab saari join requests auto-approve! 🚀
+┌─────────────────────────────────────────────────────────┐
+│                                                         │
+│  👤 User:  "pushpa dedo bhai"                           │
+│                        ↓                               │
+│  🔍 Junk hatao → Clean Name: "Pushpa"                   │
+│                        ↓                               │
+│  🌐 OMDb API Call: search("Pushpa")                     │
+│                        ↓                               │
+│  📦 Response:                                           │
+│     Title:    Pushpa: The Rise (2021)                  │
+│     Rating:   7.6/10 ⭐⭐⭐                              │
+│     Genre:    Action, Crime, Drama                     │
+│     Director: Sukumar                                  │
+│     Cast:     Allu Arjun, Rashmika...                  │
+│     Poster:   [Image URL] 🖼️                            │
+│                        ↓                               │
+│  📸 Bot sends PHOTO + CAPTION to group                  │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### 🤖 AI Chat — Auto Mode
+</details>
+
+<details>
+<summary><b>📢 Channel Auto Accept System (click karke dekho)</b></summary>
+<br/>
 
 ```
-Group mein koi likhta hai (bina tag kiye):
-"Yaar kaisi movie dekhun aaj?"
-   ↓
-Bot automatically AI se jawab deta hai:
-"Aaj ke liye Kalki 2898 AD perfect hai! 🎬
- Rating 8.5/10, epic sci-fi story hai..."
+Step 1:  Bot ko channel mein Admin banao
+           ↓
+Step 2:  Channel se koi message bot pe FORWARD karo
+           ↓
+Step 3:  Bot popup:
+         ┌──────────────────────────────────┐
+         │  📢 Channel Mila!                │
+         │  Naam: My Movie Channel          │
+         │  ID: -100xxxxxxxxxx              │
+         │  Auto Accept ke liye add karo?   │
+         │  [✅ Haan, Add Karo!] [❌ Nahi]  │
+         └──────────────────────────────────┘
+           ↓ (Haan dabao)
+Step 4:  /mychannels se manage karo:
+         ┌──────────────────────────────────┐
+         │  📢 Mere Channels (2)            │
+         │  🟢 My Movie Channel    [View]   │
+         │  🔴 My Series Channel   [View]   │
+         │  [➕ Naya Channel Add Karo]       │
+         └──────────────────────────────────┘
+           ↓ Channel pe click karo
+         ┌──────────────────────────────────┐
+         │  📢 My Movie Channel             │
+         │  Status: 🟢 Connected            │
+         │  [🔴 Disconnect Karo]            │
+         │  [🗑️ Remove Karo]               │
+         │  [🔙 Wapas]                      │
+         └──────────────────────────────────┘
 ```
+
+</details>
+
+<details>
+<summary><b>🤖 AI Chat — Auto Mode in Groups (click karke dekho)</b></summary>
+<br/>
+
+```
+Group mein koi likhta hai (kisi ko tag kiye bina):
+
+  👤 User: "yaar aaj kaisi movie dekhun?"
+              ↓
+  🤖 Bot: movie-related query detect kiya
+              ↓
+  💭 Bot: "Hmm soch raha hoon... 🤔"
+              ↓
+  🧠 AI processes in Hinglish mode
+              ↓
+  💬 Bot: "Bhai aaj Kalki 2898 AD dekh! 🎬
+           Rating 8.5/10, epic sci-fi +
+           mythology mix hai. Allu Arjun = 🔥"
+```
+
+</details>
+
+<details>
+<summary><b>🛡️ Warning & Protection System (click karke dekho)</b></summary>
+<br/>
+
+```
+LINK DETECTED:
+  Delete → ⚠️ 1/3 → ⚠️ 2/3 → ⚠️ 3/3 → 🔇 24hr MUTE
+
+ABUSE DETECTED:
+  Delete → ⚠️ 1/3 → ⚠️ 2/3 → ⚠️ 3/3 → 🚫 PERMANENT BAN
+
+Warning Rules:
+  • Per user, per group track hota hai
+  • 7 din baad warnings auto-reset
+  • Admin manually reset kar sakta hai
+```
+
+</details>
 
 ---
 
-## 🚀 Setup Guide
+## 🚀 Quick Deploy
 
-### Step 1 — Variables Set Karo
+<div align="center">
 
-`.env` file banao ya Koyeb mein environment variables set karo:
+### ☁️ Koyeb pe Deploy Karo (Free Tier)
 
-```env
-BOT_TOKEN=your_bot_token_here
-API_ID=your_api_id
-API_HASH=your_api_hash
-OWNER_ID=your_telegram_user_id
-MONGO_DB_URL=mongodb+srv://...
-OMDB_API_KEY=6ed172d8
-BOT_USERNAME=YourBot
-LOGS_CHANNEL=-100xxxxxxxxxx
+<a href="https://app.koyeb.com/deploy?type=git&repository=github.com/asbhaibsr/UltimateManagerBot&branch=main&name=ultimate-manager-bot">
+  <img src="https://www.koyeb.com/static/images/deploy/button.svg" alt="Deploy to Koyeb" height="40"/>
+</a>
+
+<br/><br/>
+
+```
+1. Upar wala button dabao
+2. GitHub account connect karo
+3. Environment variables fill karo
+4. Deploy dabao — Done! ✅
 ```
 
-| Variable | Kahan se milega |
-|----------|----------------|
-| `BOT_TOKEN` | [@BotFather](https://t.me/BotFather) se |
-| `API_ID` / `API_HASH` | [my.telegram.org](https://my.telegram.org) se |
-| `OWNER_ID` | [@userinfobot](https://t.me/userinfobot) se |
-| `MONGO_DB_URL` | [MongoDB Atlas](https://cloud.mongodb.com) se |
-| `OMDB_API_KEY` | [omdbapi.com](https://omdbapi.com) se |
+</div>
 
-### Step 2 — Install Karo
+---
+
+## 🛠️ Setup Guide
+
+### Step 1 — API Keys Lo
+
+| Variable | Kahan Se Milega | Link |
+|----------|----------------|------|
+| `BOT_TOKEN` | BotFather | [@BotFather](https://t.me/BotFather) |
+| `API_ID` | Telegram Developer | [my.telegram.org](https://my.telegram.org) |
+| `API_HASH` | Telegram Developer | [my.telegram.org](https://my.telegram.org) |
+| `OWNER_ID` | UserinfoBot | [@userinfobot](https://t.me/userinfobot) |
+| `MONGO_DB_URL` | MongoDB Atlas (Free) | [cloud.mongodb.com](https://cloud.mongodb.com) |
+| `OMDB_API_KEY` | OMDb (Free) | [omdbapi.com](https://omdbapi.com/apikey.aspx) |
+| `LOGS_CHANNEL` | Apna channel ID | @userinfobot se pata karo |
+
+### Step 2 — `.env` File
+
+```env
+BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ
+API_ID=12345678
+API_HASH=abcdef1234567890abcdef1234567890
+OWNER_ID=7315805581
+MONGO_DB_URL=mongodb+srv://user:pass@cluster.mongodb.net/
+OMDB_API_KEY=6ed172d8
+BOT_USERNAME=UltimateManagerBot
+LOGS_CHANNEL=-1002352329534
+```
+
+### Step 3 — Install & Run
 
 ```bash
 # Repo clone karo
-git clone https://github.com/yourrepo/movie-helper-bot
-cd movie-helper-bot
+git clone https://github.com/asbhaibsr/UltimateManagerBot.git
+cd UltimateManagerBot
 
 # Dependencies install karo
 pip install -r requirements.txt
 
-# Bot run karo
+# Bot start karo
 python main.py
 ```
 
-### Step 3 — Group Setup
+### Step 4 — Group Setup
 
 ```
-1. Bot ko group mein add karo
-2. Bot ko Admin banao (sab permissions de do)
-3. /settings command use karo
-4. Features ON/OFF karo as needed
+✅ Bot ko group/channel mein add karo
+✅ Bot ko Admin banao (ALL permissions)
+✅ Group mein /settings type karo
+✅ Features ON/OFF karo apne hisaab se
+✅ Done! 🎉
 ```
 
 ---
 
-## 📋 Commands
+## 📋 Commands List
 
-### 👤 All Users
+<details open>
+<summary><b>👤 User Commands</b></summary>
 
-| Command | Kya karta hai |
-|---------|--------------|
-| `/start` | Bot start karo |
-| `/help` | Help menu dekho |
-| `/request [naam]` | Movie/Series request karo |
-| `/ai [sawaal]` | AI se poocho |
-| `/mychannels` | Apne channels manage karo |
-| `/ping` | Bot status check karo |
-| `/id` | Apna Telegram ID dekho |
+| Command | Description | Example |
+|---------|-------------|---------|
+| `/start` | Bot start karo | `/start` |
+| `/help` | Help menu | `/help` |
+| `/request [naam]` | Movie request karo | `/request Pushpa 2` |
+| `/ai [sawaal]` | AI se poocho | `/ai best movies 2024` |
+| `/mychannels` | Channels manage karo | `/mychannels` |
+| `/ping` | Bot status | `/ping` |
+| `/id` | Telegram ID dekho | `/id` |
 
-### 👑 Admins Only
+</details>
 
-| Command | Kya karta hai |
-|---------|--------------|
-| `/settings` | Group settings panel |
-| `/setwelcome` | Custom welcome message set karo |
-| `/addfsub -100xxx` | Force subscribe lagao (Premium) |
-| `/clean` | Deleted accounts hatao |
+<details>
+<summary><b>👑 Admin Commands</b></summary>
 
-### 🔐 Owner Only
+| Command | Description | Example |
+|---------|-------------|---------|
+| `/settings` | Group settings panel | `/settings` |
+| `/setwelcome` | Welcome set karo | Reply + `/setwelcome` |
+| `/addfsub` | Force subscribe 💎 | `/addfsub -100xxx` |
+| `/clean` | Deleted accounts hatao | `/clean` |
 
-| Command | Kya karta hai |
-|---------|--------------|
+</details>
+
+<details>
+<summary><b>🔐 Owner Only Commands</b></summary>
+
+| Command | Description |
+|---------|-------------|
 | `/stats` | Bot statistics |
-| `/broadcast` | Sabko message bhejo |
-| `/grp_broadcast` | Sabhi groups ko message bhejo |
-| `/ban [id]` | User ban karo |
-| `/unban [id]` | User unban karo |
+| `/broadcast` | Sabko message |
+| `/grp_broadcast` | Sabhi groups ko |
+| `/ban [id]` | User ban |
+| `/unban [id]` | User unban |
 | `/add_premium [id] [months]` | Premium do |
 | `/remove_premium [id]` | Premium hatao |
+
+</details>
 
 ---
 
 ## ⚙️ Settings Panel
 
-`/settings` command se ye panel khulta hai:
-
 ```
-⚙️ Settings Panel
-📁 Group: Your Group Name
+/settings → ye UI khulta hai:
 
-┌─────────────────────────────────────┐
-│  ✏️ Spelling Check         ✅ ON    │
-│  🗑️ Auto Delete            ❌ OFF   │  
-│  👋 Welcome                ✅ ON    │
-│  🤖 AI Chat                ✅ ON    │
-│  🔗 Link Protection  ✅   🤬 Abuse ✅│
-└─────────────────────────────────────┘
-```
+┌────────────────────────────────────────────┐
+│  ⚙️ Settings Panel                         │
+│  📁 Group: Your Movie Group                │
+├────────────────────────────────────────────┤
+│  [ ✏️ Spelling Check        ✅ ON  ]       │
+│  [ 🗑️ Auto Delete           ❌ OFF ]       │
+│  [ 👋 Welcome               ✅ ON  ]       │
+│  [ 🤖 AI Chat               ✅ ON  ]       │
+│  [ 🔗 Link Prot ✅ ] [ 🤬 Abuse ✅ ]       │
+│  [ ❌ Band Karo                    ]       │
+└────────────────────────────────────────────┘
 
-### Spelling Check Sub-Menu
-
-```
-✏️ Spelling Check Settings
-
-Status: ✅ Chal raha hai
-Mode:   ⚡ Simple
-
-┌─────────────────────────────┐
-│  Band Karo ❌               │
-│  🧠 Advanced Mode pe Switch │
-│  🔙 Wapas Jao               │
-└─────────────────────────────┘
-
-Simple:   Message delete + random Hinglish warning
-Advanced: OMDb se search + poster + full movie details
+Auto Delete Sub-Menu:
+┌────────────────────────────────────────────┐
+│  [ 🚫 Disable                      ]       │
+│  [ ⏱ 5 Min     ] [ ⏱ 10 Min       ]       │
+│  [ ⏱ 30 Min    ] [ ⏱ 1 Hour       ]       │
+│  [ ⏱ 2 Hours   ] [ ⏱ 6 Hours      ]       │
+│  [ 🔙 Wapas Jao                    ]       │
+└────────────────────────────────────────────┘
 ```
 
 ---
@@ -277,15 +397,17 @@ Advanced: OMDb se search + poster + full movie details
 ## 📂 Project Structure
 
 ```
-movie-helper-bot/
+UltimateManagerBot/
 │
-├── 📄 main.py          ← Entry point + Health server (Koyeb)
-├── 🤖 bot.py           ← Main bot logic, handlers, commands
-├── 🛠️ utils.py         ← Helper functions, AI, OMDb, validators
-├── 🗄️ database.py      ← MongoDB functions (users, groups, channels)
-├── ⚙️ config.py        ← Environment variables & settings
-├── 📋 requirements.txt ← Python dependencies
-└── 📖 README.md        ← This file
+├── 🚪 main.py          ← Entry point + Health Check Server
+├── 🤖 bot.py           ← Bot handlers, commands, callbacks
+├── 🛠️ utils.py         ← OMDb, AI, validators, message banks
+├── 🗄️ database.py      ← MongoDB async functions
+├── ⚙️ config.py        ← Environment config
+├── 📋 requirements.txt ← Dependencies
+├── 🌐 runtime.txt      ← Python version
+├── 📦 Procfile         ← Process config
+└── 📖 README.md        ← Yeh file 😄
 ```
 
 ---
@@ -293,20 +415,136 @@ movie-helper-bot/
 ## 🗄️ Database Collections
 
 ```
-movie_helper_bot/
-├── users           → User info, ban status
-├── groups          → Group info, premium status  
-├── settings        → Per-group settings (spelling, welcome, etc.)
-├── user_channels   → User ke connected channels (auto accept)
-├── auto_accept     → Channel-wise auto accept status
-├── force_sub       → Group ke force subscribe channels
-├── warnings        → User warnings per group
-└── movie_requests  → Movie request history
+MongoDB: movie_helper_bot
+├── users          → { _id, username, banned, joined_at }
+├── groups         → { _id, title, is_premium, premium_expiry }
+├── settings       → { spelling_on, spelling_mode, auto_delete,
+│                      welcome, ai_enabled, link/abuse protection }
+├── user_channels  → { user_id, channel_id, auto_accept, connected }
+├── auto_accept    → { _id(channel_id), enabled }
+├── force_sub      → { _id(chat_id), channel_id }
+├── warnings       → { chat_id, user_id, count, last_warning }
+└── movie_requests → { chat_id, user_id, movie_name, status }
 ```
 
 ---
 
-## 📦 Requirements
+## 🎬 Movie Format Guide
+
+```
+✅ SAHI FORMAT:
+   Pushpa                          ← sirf naam
+   Pushpa 2021                     ← naam + year
+   Pushpa [Hindi]                  ← naam + language
+   Pushpa 2021 [Hindi]             ← naam + year + language
+   Stranger Things S01 E01         ← series format
+   Stranger Things S01 E01 2016    ← series + year
+
+❌ GALAT FORMAT (delete ho jayega):
+   pushpa movie chahiye            ← "movie", "chahiye" junk
+   bhai send kardo pushpa          ← "bhai", "send", "kardo" junk
+   plz pushpa dedo                 ← "plz", "dedo" junk
+   pushpa download link do         ← "download", "link" junk
+```
+
+---
+
+## 💎 Premium Plans
+
+<div align="center">
+
+<table>
+<tr>
+<th align="center">🥈 1 Month</th>
+<th align="center">🥇 3 Months</th>
+<th align="center">💎 Lifetime</th>
+</tr>
+<tr>
+<td align="center">
+
+**₹100**
+
+✅ Force Subscribe
+✅ No Broadcasts
+✅ Priority Support
+✅ Advanced Features
+
+</td>
+<td align="center">
+
+**₹250** ~~₹300~~
+
+✅ Force Subscribe
+✅ No Broadcasts
+✅ Priority Support
+✅ Advanced Features
+🎁 ₹50 Savings!
+
+</td>
+<td align="center">
+
+**₹500**
+
+✅ Force Subscribe
+✅ No Broadcasts
+✅ Priority Support
+✅ Advanced Features
+🎁 One-Time Only!
+
+</td>
+</tr>
+</table>
+
+<br/>
+
+<a href="https://t.me/asbhai_bsr">
+  <img src="https://img.shields.io/badge/💎%20Premium%20Kharido%20→%20@asbhai__bsr-%23FFD700?style=for-the-badge&logoColor=black" alt="Buy Premium" height="40"/>
+</a>
+
+</div>
+
+---
+
+## 💖 Support the Developer
+
+<div align="center">
+
+Agar yeh bot helpful laga toh support karo! ❤️
+
+<table>
+<tr>
+<td align="center" width="50%">
+
+### 📱 UPI Se Support Karo
+
+```
+@ARSADHSAIFI8272@IBL
+```
+
+PhonePe · GPay · Paytm
+
+*Koi bhi amount, dil se! 🙏*
+
+</td>
+<td align="center" width="50%">
+
+### 🌟 GitHub Se Support Karo
+
+<a href="https://github.com/asbhaibsr/UltimateManagerBot"><img src="https://img.shields.io/badge/⭐%20Star%20This%20Repo-FFD700?style=for-the-badge&logo=github&logoColor=black"/></a>
+
+<br/>
+
+<a href="https://t.me/asbhai_bsr"><img src="https://img.shields.io/badge/📢%20Join%20Channel-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white"/></a>
+
+</td>
+</tr>
+</table>
+
+</div>
+
+---
+
+## 📦 requirements.txt
 
 ```txt
 pyrogram==2.0.106
@@ -322,95 +560,50 @@ TgCrypto==1.2.5
 
 ---
 
-## 🌐 Deployment — Koyeb
+## 🤝 Contributing
 
+```bash
+# Fork karo
+gh repo fork asbhaibsr/UltimateManagerBot
+
+# Branch banao
+git checkout -b feature/NewFeature
+
+# Commit karo
+git commit -m "Add: NewFeature"
+
+# Push karo
+git push origin feature/NewFeature
+
+# Pull Request kholo ✅
 ```
-1. GitHub pe push karo
-2. Koyeb.com pe naya service banao
-3. GitHub repo connect karo
-4. Environment variables add karo
-5. PORT=8080 set karo
-6. Deploy! ✅
-
-Health Check URL: https://your-app.koyeb.app/health
-```
-
-**Procfile (agar chahiye):**
-```
-web: python main.py
-```
-
----
-
-## 🎬 Movie Format Guide
-
-Bot ko sahi format chahiye — ye simple hai:
-
-```
-✅ Sahi Format:
-   Movie Name                → Pushpa
-   Movie Name Year           → Pushpa 2021
-   Movie [Language]          → Pushpa [Hindi]
-   Movie Year [Language]     → Pushpa 2021 [Hindi]
-   Series SXX EXX            → Stranger Things S01 E01
-   Series SXX EXX Year       → Stranger Things S01 E01 2016
-
-❌ Galat Format (Bot delete kar dega):
-   pushpa movie chahiye      ← extra words
-   bhai send kardo pushpa    ← junk words
-   plz pushpa dedo           ← begging words
-   pushpa download link do   ← link maang raha
-```
-
----
-
-## 🛡️ Protection System
-
-```
-Link Detect  →  Delete  →  Warning  →  3 warnings  →  24hr Mute
-Abuse Detect →  Delete  →  Warning  →  3 warnings  →  Permanent Ban
-
-Warning Counter per user per group mein track hota hai.
-Admin warnings reset kar sakte hain.
-```
-
----
-
-## 👨‍💻 Developer
-
-<div align="center">
-
-**Made with ❤️ by [@asbhai_bsr](https://t.me/asbhai_bsr)**
-
-[![Telegram](https://img.shields.io/badge/Contact-@asbhai__bsr-2CA5E0?style=for-the-badge&logo=telegram)](https://t.me/asbhai_bsr)
-[![Channel](https://img.shields.io/badge/Join-Channel-2CA5E0?style=for-the-badge&logo=telegram)](https://t.me/asbhai_bsr)
-
-*Support karna chahte ho? Premium lo ya channel join karo!*
-
-</div>
-
----
-
-## 📊 Stats
-
-<div align="center">
-
-![GitHub code size](https://img.shields.io/github/languages/code-size/yourusername/movie-helper-bot?style=flat-square&color=00D4FF)
-![GitHub last commit](https://img.shields.io/github/last-commit/yourusername/movie-helper-bot?style=flat-square&color=00D4FF)
-![Python version](https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square)
-![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
-
-</div>
 
 ---
 
 <div align="center">
 
+<img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=6,11,20&height=120&section=footer&animation=twinkling" width="100%"/>
+
+<br/>
+
+**Made with 🔥 and ❤️ by [Arsadh Saifi](https://t.me/asbhai_bsr)**
+
+<br/>
+
+<a href="https://t.me/asbhai_bsr"><img src="https://img.shields.io/badge/Telegram-@asbhai__bsr-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white"/></a>
+&nbsp;
+<a href="https://github.com/asbhaibsr/UltimateManagerBot"><img src="https://img.shields.io/badge/GitHub-asbhaibsr-181717?style=for-the-badge&logo=github&logoColor=white"/></a>
+
+<br/><br/>
+
 ```
-╔══════════════════════════════════════╗
-║   Star ⭐ karo agar pasand aaya!    ║
-║   Channel join karo → @asbhai_bsr   ║
-╚══════════════════════════════════════╝
+╔══════════════════════════════════════════╗
+║  ⭐ Star karo agar pasand aaya!         ║
+║  📢 Channel  → @asbhai_bsr              ║
+║  💖 UPI      → @ARSADHSAIFI8272@IBL     ║
+╚══════════════════════════════════════════╝
 ```
+
+<img src="https://komarev.com/ghpvc/?username=asbhaibsr&label=👁️%20Profile%20Views&color=00D4FF&style=flat-square" alt="Views"/>
 
 </div>
