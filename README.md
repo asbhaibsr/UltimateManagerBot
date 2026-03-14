@@ -518,7 +518,7 @@ Agar yeh bot helpful laga toh support karo! ❤️
 ### 📱 UPI Se Support Karo
 
 ```
-@ARSADHSAIFI8272@IBL
+@ARSADSAIFI8272@IBL
 ```
 
 PhonePe · GPay · Paytm
